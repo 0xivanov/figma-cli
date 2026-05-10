@@ -30,6 +30,8 @@ A CLI that connects directly to Figma Desktop and gives you complete control:
 - **Design Tokens** — Create variables, collections, modes (Light/Dark), bind to nodes
 - **Create Anything** — Frames, text, shapes, icons (150k+ from Iconify), components
 - **Effects & Gradients** — Drop shadows, blur, linear/radial/angular/diamond gradients, image fills via CSS-like JSX props
+- **Layout Grids** — Set column/row grids on frames with one command (`figma-cli grid set ...`)
+- **Sections** — Group frames into named Figma sections (`figma-cli section create ...`)
 - **Component Properties** — Add boolean/text properties, build variant sets via `combineAsVariants`
 - **Dev Resources** — Link nodes to Storybook, GitHub, internal docs (design-dev handoff)
 - **Annotations** — Inline notes/specs/markdown directly on Figma nodes
@@ -109,6 +111,40 @@ figma-cli node to-component <id2>
 figma-cli component combine "<componentId1>,<componentId2>" --name "MyButton"
 ```
 
+### Layout grids on frames
+
+```bash
+# 12-column grid with 16px gutter, 24px margins
+figma-cli grid set 1:23 --columns 12 --gutter 16 --margin 24
+
+# Baseline-style row grid
+figma-cli grid set 1:23 --rows 8 --gutter 8
+
+# Append additional grid (don't replace existing ones)
+figma-cli grid set 1:23 --columns 12 --append
+
+# Custom color and opacity
+figma-cli grid set 1:23 --columns 12 --color "#FF008B" --opacity 0.15
+
+figma-cli grid list [nodeId]
+figma-cli grid clear <nodeId>
+```
+
+Options: `--alignment stretch|min|center|max` (default `stretch`).
+
+### Sections (organize frames into named groups)
+
+```bash
+# Create a section, optionally moving nodes into it
+figma-cli section create "Buttons" "1:23,1:24,1:25"
+
+# Or create empty, then add later
+figma-cli section create "Cards"
+figma-cli section add <sectionId> "<nodeId1>,<nodeId2>"
+
+figma-cli section list
+```
+
 ### Offline Figma Plugin API reference
 
 ```bash
@@ -118,7 +154,20 @@ figma-cli api FrameNode        # show full spec for an interface or type
 figma-cli api gap              # show capabilities not yet exposed by figma-cli
 ```
 
-If you call figma-cli with an unknown command, it now suggests matching API references instead of just dumping the help banner. Built so AI agents can self-correct when they hallucinate command names.
+If you call figma-cli with an unknown command, it suggests matching API references instead of just dumping the help banner. Built so AI agents can self-correct when they hallucinate command names.
+
+**Auto-fallback on runtime errors:** when a command hits a real Figma API error (e.g. `Property "cornerRadius" failed validation`, `addComponentProperty is not a function`), figma-cli now searches the local docs and surfaces the relevant interface refs after the error:
+
+```
+✗ Error: in addComponentProperty: Default value for instance swap component property is invalid
+
+  💡 Looks like this might map to a Figma Plugin API. Try:
+    figma-cli api ComponentNode (defines "addComponentProperty")
+    figma-cli api ComponentPropertiesMixin (defines "addComponentProperty")
+    figma-cli api ComponentSetNode (defines "addComponentProperty")
+```
+
+AI tools driving figma-cli can read the suggestion, fetch the actual spec, and retry with correct arguments.
 
 ### Safe Mode text wrapping fix
 

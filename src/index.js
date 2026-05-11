@@ -2621,8 +2621,21 @@ tokens
   .command('import <file>')
   .description('Import tokens from JSON file')
   .option('-c, --collection <name>', 'Collection name')
+  .option('--force-slash', 'Allow "/" in --collection (bypasses the LLM-mistake guard)')
   .action((file, options) => {
     checkConnection();
+    // Guard against LLM-style mistakes: a "/" in the collection name almost
+    // always means the caller split one DESIGN.md across multiple `tokens
+    // import` runs (e.g. -c "stripe/colors", -c "stripe/radius"). Figma
+    // treats "/" as a normal character — it does NOT nest collections — so
+    // the result is fake siblings, not a hierarchy.
+    if (options.collection && options.collection.includes('/')) {
+      console.error(chalk.yellow(`⚠ Collection name "${options.collection}" contains "/".`));
+      console.error(chalk.yellow('  Figma does not nest collections. "/" creates flat sibling collections.'));
+      console.error(chalk.gray('  If this is a DESIGN.md file, use `figma-cli import <path>` instead — it imports the whole system into one collection atomically.'));
+      console.error(chalk.gray('  To proceed anyway, re-run with --force-slash.'));
+      if (!options.forceSlash) process.exit(1);
+    }
 
     // Read JSON file
     let tokensData;

@@ -4120,9 +4120,11 @@ bind
   .option('-n, --node <id>', 'Node ID (uses selection if not set)')
   .action((varName, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `(async () => {
 ${nodeSelector}
 const vars = await figma.variables.getLocalVariablesAsync();
@@ -4146,9 +4148,11 @@ bind
   .option('-n, --node <id>', 'Node ID')
   .action((varName, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `(async () => {
 ${nodeSelector}
 const vars = await figma.variables.getLocalVariablesAsync();
@@ -4173,9 +4177,11 @@ bind
   .option('-n, --node <id>', 'Node ID')
   .action((varName, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `(async () => {
 ${nodeSelector}
 const vars = await figma.variables.getLocalVariablesAsync();
@@ -4196,9 +4202,11 @@ bind
   .option('-n, --node <id>', 'Node ID')
   .action((varName, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `(async () => {
 ${nodeSelector}
 const vars = await figma.variables.getLocalVariablesAsync();
@@ -4220,9 +4228,11 @@ bind
   .option('-s, --side <side>', 'Side: top, right, bottom, left, all', 'all')
   .action((varName, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     const sides = options.side === 'all'
       ? ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']
       : [`padding${options.side.charAt(0).toUpperCase() + options.side.slice(1)}`];
@@ -4455,13 +4465,26 @@ const set = program
 
 set
   .command('fill <color>')
-  .description('Set fill color (hex or var:name)')
+  .description('Set fill color (hex or var:name) on selection, --node, or all nodes matching --query')
   .option('-n, --node <id>', 'Node ID (uses selection if not set)')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern> (case-insensitive)')
   .action(async (color, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify(options.query.toLowerCase())};
+         const matches = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));
+         const expanded = [];
+         for (const m of matches) {
+           if ('fills' in m) { expanded.push(m); continue; }
+           if (typeof m.findAll === 'function') {
+             const children = m.findAll(c => 'fills' in c);
+             expanded.push(...children);
+           }
+         }
+         const nodes = expanded;`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
 
     let code;
     if (color.startsWith('var:')) {
@@ -4502,12 +4525,15 @@ set
   .command('stroke <color>')
   .description('Set stroke color (hex or var:name)')
   .option('-n, --node <id>', 'Node ID')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .option('-w, --weight <n>', 'Stroke weight', '1')
   .action(async (color, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
 
     let code;
     if (color.startsWith('var:')) {
@@ -4548,11 +4574,14 @@ set
   .command('radius <value>')
   .description('Set corner radius')
   .option('-n, --node <id>', 'Node ID')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .action((value, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `
 ${nodeSelector}
 if (nodes.length === 0) 'No node found';
@@ -4565,11 +4594,14 @@ set
   .command('size <width> <height>')
   .description('Set size')
   .option('-n, --node <id>', 'Node ID')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .action((width, height, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `
 ${nodeSelector}
 if (nodes.length === 0) 'No node found';
@@ -4583,11 +4615,14 @@ set
   .alias('position')
   .description('Set position')
   .option('-n, --node <id>', 'Node ID')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .action((x, y, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `
 ${nodeSelector}
 if (nodes.length === 0) 'No node found';
@@ -4600,11 +4635,14 @@ set
   .command('opacity <value>')
   .description('Set opacity (0-1)')
   .option('-n, --node <id>', 'Node ID')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .action((value, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `
 ${nodeSelector}
 if (nodes.length === 0) 'No node found';
@@ -4617,11 +4655,14 @@ set
   .command('name <name>')
   .description('Rename node')
   .option('-n, --node <id>', 'Node ID')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .action((name, options) => {
     checkConnection();
-    const nodeSelector = options.node
-      ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
-      : `const nodes = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const nodes = figma.currentPage.findAll(n => typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
+        : `const nodes = figma.currentPage.selection;`;
     let code = `
 ${nodeSelector}
 if (nodes.length === 0) 'No node found';
@@ -4677,12 +4718,15 @@ set
   .option('-g, --gap <n>', 'Gap between items', '8')
   .option('-p, --padding <n>', 'Padding')
   .option('-n, --node <id>', 'Apply to this node ID (instead of current selection)')
+  .option('-q, --query <pattern>', 'Apply to all nodes whose name contains <pattern>')
   .action((direction, options) => {
     checkConnection();
     const layoutMode = direction === 'col' || direction === 'vertical' ? 'VERTICAL' : 'HORIZONTAL';
-    const nodeSelector = options.node
-      ? `const root = await figma.getNodeByIdAsync(${JSON.stringify(options.node)}); const sel = root ? [root] : [];`
-      : `const sel = figma.currentPage.selection;`;
+    const nodeSelector = options.query
+      ? `const pattern = ${JSON.stringify((options.query || '').toLowerCase())}; const sel = figma.currentPage.findAll(n => (n.type === 'FRAME' || n.type === 'COMPONENT') && typeof n.name === 'string' && n.name.toLowerCase().includes(pattern));`
+      : options.node
+        ? `const root = await figma.getNodeByIdAsync(${JSON.stringify(options.node)}); const sel = root ? [root] : [];`
+        : `const sel = figma.currentPage.selection;`;
     let code = `
 (async () => {
 ${nodeSelector}
@@ -5158,10 +5202,11 @@ program
 
 program
   .command('render-batch')
-  .description('Render multiple JSX frames in a single call (fast)')
+  .description('Render multiple JSX frames in a single call (fast). Pass --as-component to promote each rendered frame to a Figma Component.')
   .argument('<jsxArray>', 'JSON array of JSX strings, e.g. \'["<Frame>...</Frame>","<Frame>...</Frame>"]\'')
   .option('-g, --gap <n>', 'Gap between frames', '40')
   .option('-d, --direction <dir>', 'Layout direction: row (horizontal) or col (vertical)', 'row')
+  .option('--as-component', 'After rendering, convert each resulting frame to a Figma component')
   .action(async (jsxArrayStr, options) => {
     await checkConnection();
     try {
@@ -5185,6 +5230,35 @@ program
           console.log(chalk.green('✓ Rendered: ' + r.id + (r.name ? ' (' + r.name + ')' : '')));
         });
         console.log(chalk.cyan(`\n${results.length} frames created`));
+
+        if (options.asComponent) {
+          const ids = results.map(r => r.id).filter(Boolean);
+          if (ids.length > 0) {
+            try {
+              const compInfo = await daemonExec('eval', { code:
+                `(async () => {
+                  const ids = ${JSON.stringify(ids)};
+                  const out = [];
+                  for (const id of ids) {
+                    const n = await figma.getNodeByIdAsync(id);
+                    if (!n) continue;
+                    const c = figma.createComponentFromNode(n);
+                    out.push({ id: c.id, name: c.name });
+                  }
+                  return out;
+                })()`
+              });
+              if (Array.isArray(compInfo)) {
+                compInfo.forEach(c => {
+                  console.log(chalk.green('✓ Converted to component: ' + c.id + (c.name ? ' (' + c.name + ')' : '')));
+                });
+                console.log(chalk.cyan(`\n${compInfo.length} components created`));
+              }
+            } catch (e) {
+              console.error(chalk.yellow('⚠ rendered, but to-component failed:'), e.message);
+            }
+          }
+        }
       } else {
         console.log(chalk.green('✓ Rendered'));
       }

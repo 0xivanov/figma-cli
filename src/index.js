@@ -4640,18 +4640,21 @@ set
 
     let code;
     if (color.startsWith('var:')) {
-      // Variable binding
+      // Variable binding — search ALL local collections so user-imported
+      // design systems (Carbon, Material, custom) resolve, not only shadcn.
       const varName = color.slice(4);
       code = `(async () => {
         const collections = await figma.variables.getLocalVariableCollectionsAsync();
-        const col = collections.find(c => c.name === 'shadcn');
-        if (!col) return 'shadcn collection not found';
+        const allVars = await figma.variables.getLocalVariablesAsync();
+        // Prefer an exact name match in a shadcn collection, then any other.
         let variable = null;
-        for (const id of col.variableIds) {
-          const v = await figma.variables.getVariableByIdAsync(id);
-          if (v && v.name === '${varName}') { variable = v; break; }
+        for (const v of allVars) {
+          if (v.name !== ${JSON.stringify(varName)}) continue;
+          const col = collections.find(c => c.id === v.variableCollectionId);
+          if (col && col.name.startsWith('shadcn')) { variable = v; break; }
         }
-        if (!variable) return 'Variable ${varName} not found';
+        if (!variable) variable = allVars.find(v => v.name === ${JSON.stringify(varName)});
+        if (!variable) return 'Variable ${varName} not found in any local collection';
         ${nodeSelector}
         if (__fillNodes.length === 0) return 'No node found';
         const boundFill = (v) => figma.variables.setBoundVariableForPaint({ type: 'SOLID', color: { r: 0.5, g: 0.5, b: 0.5 } }, 'color', v);
@@ -4685,18 +4688,20 @@ set
 
     let code;
     if (color.startsWith('var:')) {
-      // Variable binding
+      // Variable binding — search ALL local collections so user-imported
+      // design systems (Carbon, Material, custom) resolve, not only shadcn.
       const varName = color.slice(4);
       code = `(async () => {
         const collections = await figma.variables.getLocalVariableCollectionsAsync();
-        const col = collections.find(c => c.name === 'shadcn');
-        if (!col) return 'shadcn collection not found';
+        const allVars = await figma.variables.getLocalVariablesAsync();
         let variable = null;
-        for (const id of col.variableIds) {
-          const v = await figma.variables.getVariableByIdAsync(id);
-          if (v && v.name === '${varName}') { variable = v; break; }
+        for (const v of allVars) {
+          if (v.name !== ${JSON.stringify(varName)}) continue;
+          const col = collections.find(c => c.id === v.variableCollectionId);
+          if (col && col.name.startsWith('shadcn')) { variable = v; break; }
         }
-        if (!variable) return 'Variable ${varName} not found';
+        if (!variable) variable = allVars.find(v => v.name === ${JSON.stringify(varName)});
+        if (!variable) return 'Variable ${varName} not found in any local collection';
         ${nodeSelector}
         if (nodes.length === 0) return 'No node found';
         const boundFill = (v) => figma.variables.setBoundVariableForPaint({ type: 'SOLID', color: { r: 0.5, g: 0.5, b: 0.5 } }, 'color', v);

@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/badge/Figma-Desktop-purple" alt="Figma Desktop">
   <img src="https://img.shields.io/badge/No_API_Key-Required-green" alt="No API Key">
   <img src="https://img.shields.io/badge/AI--Ready-Local%20%2B%20Cloud%20LLMs-blue" alt="AI Ready">
+  <img src="https://img.shields.io/badge/DESIGN.md-Import-orange" alt="DESIGN.md Import">
 </p>
 
 <p align="center">
@@ -12,6 +13,22 @@
   Connect Claude Code, opencode, Cursor, or a local LLM directly to Figma Desktop.<br>
   No API key. No copy-paste. No plugin you have to babysit.
 </p>
+
+---
+
+## ⭐ Import a whole design system in one command
+
+If you have a `DESIGN.md` extraction (the standard format with a `## Machine-readable tokens` section + a `` ```json design-tokens `` block), figma-cli ingests the entire thing — colors, radii, typography — and creates Figma variables you can immediately use in renders.
+
+```bash
+figma-cli import ~/Downloads/DESIGN.md
+```
+
+Works with any design system that follows the convention: Carbon, Material, Polaris, or your own in-house export. Format-agnostic. No personal access tokens. No cloud. Drops straight into Figma Desktop via the local daemon.
+
+After that, every render can use `var:accent`, `var:text-primary`, `var:radius-md` etc. — the names from your DESIGN.md. Mix this with the local LLM agent (see `figmachat` / `/load`) and the model uses your token vocabulary automatically.
+
+[See full DESIGN.md docs →](#import-a-design-system-from-a-designmd)
 
 ---
 

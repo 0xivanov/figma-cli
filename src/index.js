@@ -2711,6 +2711,92 @@ return 'Imported ' + count + ' tokens into ' + collectionName;
   });
 
 tokens
+  .command('overlap <collections...>')
+  .description('Compare token names across N local variable collections. Shows common core (switchable subset) + per-collection unique names. Useful before `figma-cli use` to know which tokens swap cleanly.')
+  .option('--json', 'Output as JSON')
+  .action(async (collectionNames, options) => {
+    await checkConnection();
+    if (collectionNames.length < 2) {
+      console.error(chalk.red('✗'), 'Pass at least two collection names. Example: figma-cli tokens overlap airbnb cursor stripe');
+      process.exit(1);
+    }
+    const code = `(async () => {
+      const cols = await figma.variables.getLocalVariableCollectionsAsync();
+      const allVars = await figma.variables.getLocalVariablesAsync();
+      const targets = ${JSON.stringify(collectionNames)};
+      const resolved = [];
+      const missing = [];
+      for (const q of targets) {
+        const ql = q.toLowerCase();
+        const c = cols.find(c => c.name.toLowerCase() === ql)
+              || cols.find(c => c.name.toLowerCase().includes(ql));
+        if (!c) { missing.push(q); continue; }
+        const names = new Set(allVars.filter(v => v.variableCollectionId === c.id).map(v => v.name));
+        resolved.push({ query: q, name: c.name, names: [...names] });
+      }
+      if (missing.length) {
+        return { error: 'collections not found: ' + missing.join(', '),
+                 available: cols.map(c => c.name) };
+      }
+      // Intersection: names present in EVERY resolved collection
+      const sets = resolved.map(r => new Set(r.names));
+      const intersection = [...sets[0]].filter(n => sets.every(s => s.has(n))).sort();
+      // Per-collection: unique to this collection (in this set, not in any other)
+      const unique = resolved.map((r, i) => ({
+        collection: r.name,
+        total: r.names.length,
+        only_here: r.names.filter(n => resolved.every((r2, j) => i === j || !sets[j].has(n))).sort(),
+        missing_here: [...intersection.length > 0 ? new Set() : new Set()].sort(),
+      }));
+      // For each collection, also compute "missing here that others have"
+      const allNames = new Set();
+      for (const r of resolved) for (const n of r.names) allNames.add(n);
+      for (let i = 0; i < unique.length; i++) {
+        const have = sets[i];
+        unique[i].missing_here = [...allNames].filter(n => !have.has(n)).sort();
+      }
+      return { collections: resolved.map(r => r.name), commonCore: intersection, perCollection: unique };
+    })()`;
+    try {
+      const r = await daemonExec('eval', { code });
+      if (r.error) {
+        console.error(chalk.red('✗'), r.error);
+        console.error(chalk.gray('  Available: ' + (r.available || []).join(', ')));
+        process.exit(1);
+      }
+      if (options.json) {
+        console.log(JSON.stringify(r, null, 2));
+        return;
+      }
+      console.log();
+      console.log(chalk.cyan(`Comparing ${r.collections.length} collections: ${r.collections.join(', ')}`));
+      console.log();
+      console.log(chalk.green(`✓ Common core — ${r.commonCore.length} tokens (switch cleanly across all):`));
+      if (r.commonCore.length === 0) {
+        console.log(chalk.gray('  (none — no shared token names)'));
+      } else {
+        console.log('  ' + r.commonCore.join(', '));
+      }
+      console.log();
+      for (const c of r.perCollection) {
+        console.log(chalk.cyan(`${c.collection}`) + chalk.gray(` (${c.total} tokens)`));
+        if (c.only_here.length > 0) {
+          console.log(chalk.yellow(`  only here (${c.only_here.length}):`));
+          console.log('    ' + c.only_here.join(', '));
+        }
+        if (c.missing_here.length > 0) {
+          console.log(chalk.gray(`  missing here (${c.missing_here.length}) — won't switch INTO this collection:`));
+          console.log(chalk.gray('    ' + c.missing_here.join(', ')));
+        }
+        console.log();
+      }
+      console.log(chalk.gray('Tip: design with the common-core tokens for cleanest theme switching.'));
+    } catch (e) {
+      handleEvalError(e);
+    }
+  });
+
+tokens
   .command('import-design-md <file>')
   .description('Import tokens from a DESIGN.md (Figma extraction format with `## 11. Machine-readable tokens` JSON block). Creates color, radius, and typography variables. Also prints a context summary for figmachat.')
   .option('-c, --collection <name>', 'Collection name (defaults to the design system name)')

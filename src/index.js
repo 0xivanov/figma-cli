@@ -9194,6 +9194,7 @@ shadcn
       items = getAllComponents();
     } else if (names && names.length > 0) {
       items = [];
+      const userPassedCount = options.count !== undefined && options.count !== '1';
       for (const name of names) {
         const comp = getComponent(name);
         if (!comp) {
@@ -9201,8 +9202,16 @@ shadcn
           console.log(chalk.gray(`  Available: ${VISUAL_COMPONENTS.join(', ')}`));
           return;
         }
-        // Expand each component by --count copies
-        for (let i = 0; i < count; i++) items.push(...comp);
+        // Semantics:
+        //   `shadcn add button`           → all 9 variants once (the variant gallery)
+        //   `shadcn add button --count 4` → 4 copies of the DEFAULT variant (= comp[0])
+        //                                   (the user asked for 4 buttons, not 4×9=36)
+        if (userPassedCount) {
+          const defaultVariant = comp[0];
+          for (let i = 0; i < count; i++) items.push(defaultVariant);
+        } else {
+          items.push(...comp);
+        }
       }
     } else {
       console.log(chalk.yellow('  Specify component names or use --all'));

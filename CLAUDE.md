@@ -51,6 +51,24 @@ CLI that controls Figma Desktop directly. No API key needed.
 7. **NEVER delete existing nodes** - users may have components they want to keep!
 8. **Always verify after creating:** `figma-cli verify "NODE_ID"`
 
+### 🎨 THEMED vs SHADCN (read the user's intent)
+
+When the user asks for components, two distinct universes exist:
+
+| User says | Means | Use |
+|---|---|---|
+| "create 3 buttons" / "add a card" | shadcn-style primitives are fine | `figma-cli shadcn add button --count 3` |
+| "create 4 buttons **using variables / in figma style / themed / using the loaded design system / with tokens**" | wants CUSTOM-rendered components bound to the user's currently-loaded design system variables | `figma-cli render-batch '[…var:primary, var:on-primary…]'` |
+
+`shadcn add` ignores any loaded DESIGN.md / variable collection. It produces shadcn's own primitives in shadcn's own colors. If the user has imported Airbnb / Cursor / their in-house system and asks for "4 buttons with the variables", they expect those VARIABLE-BOUND buttons — not shadcn ones. **Read the user's wording before defaulting to `shadcn add`.**
+
+**`--count` semantics for `shadcn add`:**
+- `figma-cli shadcn add button` → renders all 9 button variants once (variant gallery)
+- `figma-cli shadcn add button --count 4` → 4 copies of the DEFAULT variant (4 buttons total, not 4×9=36)
+- `figma-cli shadcn add card --count 3` → 3 cards (Card has 1 variant, so 3 buttons)
+
+**Don't use `rounded="var:md"` in JSX.** `rounded=` takes a number. Look up the radius token's px value via `figma-cli var list` (e.g. `rounded={8}`).
+
 ### 🛑 MULTI-ITEM CREATION (the rule that gets violated the most)
 
 **The intent test:** "user asked for N <noun>" → **N independent top-level nodes on the canvas**. NOT one wrapper Component containing N children. NOT one Frame with `flex="row"`. N separate nodes.

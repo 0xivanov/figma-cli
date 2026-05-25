@@ -455,17 +455,20 @@ function meshPositions(n, style, rng) {
       }
     }
   } else {
-    // scatter: jittered grid, but with big radii so neighbors overlap and
-    // the whole frame fills. Outer cells pushed past the edges.
-    const cols = Math.ceil(Math.sqrt(n));
-    const rows = Math.ceil(n / cols);
+    // scatter: distribute colors around an elliptical PERIMETER ring, pushed
+    // out past the edges. This keeps each hue in its own region and leaves
+    // the center as a soft blend of its neighbours — avoiding the muddy
+    // gray "all hues overlap dead-center" blob that a filled interior grid
+    // produces with many opposing colors.
+    const start = rng() * Math.PI * 2;
     for (let i = 0; i < n; i++) {
-      const gx = (i % cols + 0.5) / cols;
-      const gy = (Math.floor(i / cols) + 0.5) / rows;
-      // Expand grid 1.2x around center so edge cells sit off-frame.
-      const ex = (gx - 0.5) * 1.2 + 0.5;
-      const ey = (gy - 0.5) * 1.2 + 0.5;
-      pts.push({ fx: jit(ex, 0.3), fy: jit(ey, 0.3), r: r(0.62, 0.12) });
+      const ang = start + (i / n) * Math.PI * 2 + (rng() - 0.5) * 0.35;
+      const rad = 0.72 + rng() * 0.18;
+      pts.push({
+        fx: 0.5 + Math.cos(ang) * rad,
+        fy: 0.5 + Math.sin(ang) * rad * 0.92,
+        r: r(0.58, 0.1),
+      });
     }
   }
   return pts;
@@ -477,9 +480,17 @@ export function buildMeshFromColors(colors, opts = {}) {
 
   const seed = opts.seed != null ? (opts.seed >>> 0) : (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
   const rng = makeRng(seed);
-  let style = opts.style;
-  if (!style || style === 'auto') style = MESH_STYLES[Math.floor(rng() * MESH_STYLES.length)];
-  if (!MESH_STYLES.includes(style)) throw new Error(`Unknown style "${style}". One of: ${MESH_STYLES.join(', ')}, auto.`);
+  // Friendly aliases for common style guesses, so a caller naming a vibe
+  // ("aurora", "blob", "radial") gets a sensible layout instead of an error.
+  const STYLE_ALIASES = {
+    aurora: 'drift', blossom: 'spotlight', nebula: 'scatter', ring: 'scatter',
+    blob: 'spotlight', radial: 'spotlight', linear: 'diagonal', stripes: 'bands',
+    random: 'auto', mesh: 'auto', '': 'auto',
+  };
+  let style = (opts.style || 'auto').toLowerCase();
+  if (STYLE_ALIASES[style]) style = STYLE_ALIASES[style];
+  if (style === 'auto') style = MESH_STYLES[Math.floor(rng() * MESH_STYLES.length)];
+  if (!MESH_STYLES.includes(style)) throw new Error(`Unknown style "${opts.style}". One of: ${MESH_STYLES.join(', ')}, auto.`);
 
   // Shuffle which color lands where so palette order doesn't dictate look.
   const order = hexes.map((_, i) => i);

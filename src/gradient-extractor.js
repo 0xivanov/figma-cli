@@ -387,58 +387,74 @@ export const MESH_STYLES = ['scatter', 'diagonal', 'bands', 'drift', 'spotlight'
 // Positions can sit slightly off-frame; the clip then shows only the soft
 // bleed. Each style jitters via rng() so repeated calls look distinct and
 // no blob is hard-locked to dead center.
+// Positions are pushed past the frame edges and radii are kept large (~0.6
+// of the min side) so every blob blankets a big region. This is what made
+// the hand-crafted Coral Reef / Deep Sea / Forest Mist wallpapers read as
+// smooth full-bleed gradients rather than isolated blobs over a base color.
 function meshPositions(n, style, rng) {
   const jit = (base, amt) => base + (rng() - 0.5) * amt;
-  const r = (base, amt = 0.12) => Math.max(0.3, jit(base, amt));
+  const r = (base, amt = 0.1) => Math.max(0.5, jit(base, amt));
   const pts = [];
 
   if (style === 'diagonal') {
     const flip = rng() > 0.5;
     for (let i = 0; i < n; i++) {
       const t = n === 1 ? 0.5 : i / (n - 1);
-      const fx = flip ? 1 - t : t;
-      pts.push({ fx: jit(fx, 0.28), fy: jit(t, 0.22), r: r(0.52, 0.16) });
+      // Run the band from one off-frame corner to the opposite one.
+      const fx = (flip ? 1 - t : t) * 1.2 - 0.1;
+      const fy = t * 1.2 - 0.1;
+      pts.push({ fx: jit(fx, 0.2), fy: jit(fy, 0.18), r: r(0.66, 0.12) });
     }
   } else if (style === 'bands') {
     const horizontal = rng() > 0.5;
     for (let i = 0; i < n; i++) {
-      const t = (i + 0.5) / n;
-      if (horizontal) pts.push({ fx: jit(0.5, 0.7), fy: jit(t, 0.12), r: r(0.55, 0.1) });
-      else pts.push({ fx: jit(t, 0.12), fy: jit(0.5, 0.7), r: r(0.55, 0.1) });
+      // Spread the band centers slightly past the edges so the end colors
+      // bleed fully off-frame instead of stopping inside it.
+      const t = (i + 0.5) / n * 1.2 - 0.1;
+      if (horizontal) pts.push({ fx: jit(0.5, 0.5), fy: jit(t, 0.1), r: r(0.66, 0.08) });
+      else pts.push({ fx: jit(t, 0.1), fy: jit(0.5, 0.5), r: r(0.66, 0.08) });
     }
   } else if (style === 'drift') {
-    // Cluster weighted toward one corner, trailing diagonally across.
-    const cx = rng() > 0.5 ? 0 : 1;
-    const cy = rng() > 0.5 ? 0 : 1;
+    const cx = rng() > 0.5 ? -0.1 : 1.1;
+    const cy = rng() > 0.5 ? -0.1 : 1.1;
     for (let i = 0; i < n; i++) {
       const t = n === 1 ? 0 : i / (n - 1);
-      const fx = cx + (1 - 2 * cx) * t * 0.85;
-      const fy = cy + (1 - 2 * cy) * t * 0.85;
-      pts.push({ fx: jit(fx, 0.22), fy: jit(fy, 0.22), r: r(0.55 - t * 0.12, 0.12) });
+      const fx = cx + (1 - 2 * (cx < 0.5 ? 0 : 1)) * t * 1.05;
+      const fy = cy + (1 - 2 * (cy < 0.5 ? 0 : 1)) * t * 1.05;
+      pts.push({ fx: jit(fx, 0.18), fy: jit(fy, 0.18), r: r(0.7 - t * 0.12, 0.1) });
     }
   } else if (style === 'spotlight') {
-    // One large off-center anchor + satellites ringed around the edges.
-    pts.push({ fx: jit(0.36, 0.28), fy: jit(0.4, 0.28), r: r(0.62, 0.1) });
+    // One big off-center anchor + satellites pushed out past the edges so the
+    // frame stays fully covered (no base showing between satellites).
+    pts.push({ fx: jit(0.4, 0.24), fy: jit(0.42, 0.24), r: r(0.7, 0.08) });
     const start = rng() * Math.PI * 2;
     for (let i = 1; i < n; i++) {
       const ang = start + (i / Math.max(1, n - 1)) * Math.PI * 2;
-      pts.push({ fx: jit(0.5 + Math.cos(ang) * 0.62, 0.16), fy: jit(0.5 + Math.sin(ang) * 0.62, 0.16), r: r(0.42, 0.12) });
+      pts.push({ fx: jit(0.5 + Math.cos(ang) * 0.85, 0.12), fy: jit(0.5 + Math.sin(ang) * 0.85, 0.12), r: r(0.6, 0.1) });
     }
   } else if (style === 'corners') {
-    const corners = [[-0.05, -0.05], [1.05, -0.05], [-0.05, 1.05], [1.05, 1.05]];
+    const corners = [[-0.1, -0.1], [1.1, -0.1], [-0.1, 1.1], [1.1, 1.1]];
     for (let i = 0; i < n; i++) {
-      if (i < 4) pts.push({ fx: jit(corners[i][0], 0.12), fy: jit(corners[i][1], 0.12), r: r(0.52, 0.12) });
-      else pts.push({ fx: jit(0.5, 0.7), fy: jit(0.5, 0.7), r: r(0.4, 0.12) });
+      if (i < 4) pts.push({ fx: jit(corners[i][0], 0.1), fy: jit(corners[i][1], 0.1), r: r(0.68, 0.08) });
+      // Extra colors become edge-centered accents, not a dead-center blob.
+      else {
+        const edge = (i - 4) % 4;
+        const ep = [[0.5, -0.1], [1.1, 0.5], [0.5, 1.1], [-0.1, 0.5]][edge];
+        pts.push({ fx: jit(ep[0], 0.12), fy: jit(ep[1], 0.12), r: r(0.6, 0.1) });
+      }
     }
   } else {
-    // scatter: spread across the canvas on a loose jittered grid, never
-    // dead-center, varied radii.
+    // scatter: jittered grid, but with big radii so neighbors overlap and
+    // the whole frame fills. Outer cells pushed past the edges.
     const cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
     for (let i = 0; i < n; i++) {
       const gx = (i % cols + 0.5) / cols;
       const gy = (Math.floor(i / cols) + 0.5) / rows;
-      pts.push({ fx: jit(gx, 0.5), fy: jit(gy, 0.5), r: r(0.46, 0.18) });
+      // Expand grid 1.2x around center so edge cells sit off-frame.
+      const ex = (gx - 0.5) * 1.2 + 0.5;
+      const ey = (gy - 0.5) * 1.2 + 0.5;
+      pts.push({ fx: jit(ex, 0.3), fy: jit(ey, 0.3), r: r(0.62, 0.12) });
     }
   }
   return pts;

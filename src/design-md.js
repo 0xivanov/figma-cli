@@ -42,9 +42,18 @@ function stripPx(v) {
  */
 function normalizeYamlSpec(spec) {
   const out = { color: {}, typography: {}, radius: {}, spacing: {}, shadow: {}, meta: {} };
-  // colors (both `colors:` and `color:` are accepted)
+  // colors (both `colors:` and `color:` are accepted) — map to the SHARED
+  // canonical names (same as the prose path) so every collection switches cleanly.
   const colors = spec.colors || spec.color || {};
-  for (const [k, v] of Object.entries(colors)) out.color[k] = v;
+  const colorRows = [];
+  for (const [k, v] of Object.entries(colors)) {
+    const hex = typeof v === 'string' ? v : (v && typeof v.value === 'string' ? v.value : null);
+    if (!hex) continue;
+    const role = yamlRole(k);
+    if (!role) continue;                 // skip on-* helpers
+    colorRows.push({ name: k, color: hex, role });
+  }
+  out.color = assignCanonical(colorRows);
   // typography — figma-cli's importer expects { fontFamily, fontSize, fontWeight, lineHeight, letterSpacing }
   const ty = spec.typography || {};
   for (const [name, t] of Object.entries(ty)) {
@@ -89,7 +98,10 @@ function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/** Classify a prose color row by its role, from name + description text. */
+/** Classify a PROSE color row by its role, from name + description text.
+ * (Prose descriptions say "Brand accent" / "Page background, primary surface",
+ *  so we read intent from the words — "primary" alone is NOT enough to mean
+ *  accent because "primary surface" is a background.) */
 function roleOf(name, desc) {
   const b = `${name} ${desc}`.toLowerCase();
   if (/\b(cta|accent|brand|link)\b/.test(b)) return 'accent';
@@ -99,6 +111,51 @@ function roleOf(name, desc) {
   if (b.includes('surface') || b.includes('card') || b.includes('background')) return 'surface';
   if (b.includes('border') || b.includes('hairline')) return 'border';
   return 'other';
+}
+
+/** Classify a YAML token by its KEY name (keys are already semantic: primary,
+ * ink, canvas, surface-tile-1, …). `on-*` (text-on-color helpers) are skipped. */
+function yamlRole(key) {
+  const k = key.toLowerCase();
+  if (/^on-/.test(k)) return null;
+  if (/(primary|accent|brand|cta|action|link|focus)/.test(k)) return 'accent';
+  if (/(ink|body|text|heading|foreground)/.test(k)) return 'text';
+  if (/(canvas|background|page|base)/.test(k)) return 'bg';
+  if (/(surface|tile|card|panel|sheet|elevated|pearl)/.test(k)) return 'surface';
+  if (/(border|hairline|divider|stroke|rule)/.test(k)) return 'border';
+  return 'other';
+}
+
+// Shared canonical vocabulary. EVERY design system imports under these same
+// names so `figma-cli use <collection>` can switch a design cleanly between
+// brands (cursor ↔ stripe ↔ apple) — name-matching only works if names match.
+const CANON_NAMES = {
+  bg: ['canvas', 'canvas-subtle'],
+  text: ['ink', 'body'],
+  accent: ['primary', 'accent'],
+  surface: ['surface', 'surface-2', 'surface-3', 'surface-4'],
+  border: ['hairline', 'border-strong'],
+  other: [],
+};
+
+/** Map role-tagged color rows ([{name, color, role}]) to the shared canonical
+ * names; overflow beyond the canonical slots keeps a slugged name. */
+function assignCanonical(rows) {
+  const color = {};
+  const used = new Set();
+  const assign = (base, hex) => {
+    let n = base, i = 2;
+    while (used.has(n)) n = `${base}-${i++}`;
+    used.add(n);
+    color[n] = hex;
+  };
+  for (const role of ['bg', 'text', 'accent', 'surface', 'border', 'other']) {
+    rows.filter(r => r.role === role).forEach((r, idx) => {
+      const canon = CANON_NAMES[role][idx];
+      assign(canon || slugify(r.name), r.color);
+    });
+  }
+  return color;
 }
 
 // Prose color rows: `**Cursor Cream** (`#f2f1ed`): Page background, primary surface`
@@ -126,30 +183,7 @@ function parseProseSpec(text) {
     rows.push({ name: m[1].trim(), color, desc: m[3].trim(), role: roleOf(m[1], m[3]) });
   }
   if (rows.length < 2) return null;               // 2 = a legit B&W system (e.g. Figma)
-
-  const CANON = {
-    bg: ['canvas', 'canvas-subtle'],
-    text: ['ink', 'body'],
-    accent: ['primary', 'accent'],
-    surface: ['surface', 'surface-2', 'surface-3', 'surface-4'],
-    border: ['hairline', 'border-strong'],
-    other: [],
-  };
-  const color = {};
-  const used = new Set();
-  const assign = (base, hex) => {
-    let n = base, i = 2;
-    while (used.has(n)) n = `${base}-${i++}`;
-    used.add(n);
-    color[n] = hex;
-  };
-  for (const role of ['bg', 'text', 'accent', 'surface', 'border', 'other']) {
-    rows.filter(r => r.role === role).forEach((r, idx) => {
-      const canon = CANON[role][idx];
-      assign(canon || slugify(r.name), r.color);
-    });
-  }
-  return { color, typography: {}, radius: {}, spacing: {}, shadow: {}, meta: {} };
+  return { color: assignCanonical(rows), typography: {}, radius: {}, spacing: {}, shadow: {}, meta: {} };
 }
 
 export function parseDesignMd(filepath) {

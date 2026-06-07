@@ -65,6 +65,26 @@ Claude builds it in Figma instantly.
 
 ---
 
+## How it connects to Figma: Yolo vs Safe mode
+
+figma-ds-cli talks to your Figma Desktop in one of two ways. Claude picks one during setup , here's what they mean, so you know what's happening:
+
+### ⚡ Yolo Mode , the default, recommended
+- **Fully automatic.** Claude sets it up, you do nothing.
+- It applies a **small, reversible patch** to the Figma Desktop app so the CLI can talk to it directly. That's what makes it fast and completely hands-off , no plugin to keep open, no clicking.
+- "Yolo" sounds scary, but it's **safe and undoable** , Claude can un-patch it anytime, and nothing ever leaves your machine.
+- Just tell Claude *"connect to Figma"* and you're done.
+
+### 🛡️ Safe Mode , no changes to the Figma app
+- **Doesn't touch the Figma app at all.** Instead it uses a tiny built-in Figma plugin.
+- You run it once from Figma's **Plugins → Development → FigCli** and keep that plugin open while you work.
+- A little more manual (you start the plugin), but **zero modifications** to Figma itself , good if you, or your company's IT policy, don't want the app patched.
+- Tell Claude *"connect to Figma in safe mode"*.
+
+**Both do exactly the same things.** Unsure? Use Yolo. Want nothing changed on your Figma app? Use Safe. You can switch anytime , just ask Claude.
+
+---
+
 ## What you can ask for
 
 Just say it in plain language. A few examples:

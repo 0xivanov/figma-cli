@@ -186,7 +186,11 @@ async function getCdpClient() {
     while (isCdpConnecting) {
       await new Promise(r => setTimeout(r, 100));
     }
-    return cdpClient;
+    // The other attempt may have failed and left cdpClient null —
+    // fall through and try connecting ourselves instead of returning null.
+    if (cdpClient && cdpClient.ws && cdpClient.ws.readyState === 1) {
+      return cdpClient;
+    }
   }
 
   isCdpConnecting = true;
@@ -394,9 +398,21 @@ async function handleRequest(req, res) {
       const MAX_RETRIES = 2;
       let lastError;
 
+      // Parse once, outside the retry loop — a malformed body never becomes
+      // valid by retrying, and retries used to tear down a healthy CDP
+      // connection for it.
+      let payload;
+      try {
+        payload = JSON.parse(body);
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON body: ' + e.message }));
+        return;
+      }
+
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { action, code, jsx, jsxArray, gap, vertical, collection } = JSON.parse(body);
+          const { action, code, jsx, jsxArray, gap, vertical, collection } = payload;
           let result;
 
           const execWithTimeout = async (fn, timeoutMs = 30000) => {
@@ -425,7 +441,7 @@ async function handleRequest(req, res) {
               const ClientClass = await getFigmaClient();
               const batchParser = new ClientClass();
               if (collection) batchParser.setCollection(collection);
-              const batchCode = batchParser.parseJSXBatch(jsxArray, {
+              const batchCode = await batchParser.parseJSXBatch(jsxArray, {
                 gap: gap || 40,
                 vertical: vertical || false
               });
@@ -456,18 +472,37 @@ async function handleRequest(req, res) {
             }
           }
 
-          // For Yolo Mode: force reconnect
+          // For Yolo Mode: only reconnect when the connection is actually
+          // broken. If CDP is healthy, the error came from the executed code
+          // itself — retrying would just re-run it (and a timed-out render
+          // would create duplicate nodes).
           if (attempt < MAX_RETRIES && MODE !== 'plugin' && !isPluginConnected()) {
+            if (await isCdpHealthy(true)) {
+              console.log('[daemon] CDP healthy — error is not connection-related, not retrying');
+              break;
+            }
             console.log('[daemon] Reconnecting CDP before retry...');
-            try { cdpClient.close(); } catch {}
-            cdpClient = null;
-            await new Promise(r => setTimeout(r, 200));
+            // Don't tear down a connection another request is currently building
+            if (!isCdpConnecting) {
+              try { if (cdpClient) cdpClient.close(); } catch {}
+              cdpClient = null;
+            }
+            // Backoff: 300ms after first failure, 1s after second
+            await new Promise(r => setTimeout(r, attempt === 0 ? 300 : 1000));
+            try {
+              await getCdpClient();
+              if (!(await isCdpHealthy(true))) {
+                console.log('[daemon] CDP still unhealthy after reconnect');
+              }
+            } catch (reconnectError) {
+              console.log('[daemon] CDP reconnect failed: ' + reconnectError.message);
+            }
           }
         }
       }
 
       res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: lastError.message }));
+      res.end(JSON.stringify({ error: (lastError && lastError.message) || 'Execution failed' }));
     });
     return;
   }

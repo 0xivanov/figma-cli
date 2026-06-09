@@ -1,0 +1,326 @@
+// Commands: export-eval (extracted from index.js)
+import chalk from 'chalk';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import {
+  program,
+  checkConnection,
+  daemonExec,
+  figmaEvalSync,
+  figmaUse,
+  isDaemonRunning,
+  unescapeShell
+} from '../lib/cli-core.js';
+
+// ============ EXPORT ============
+
+const exp = program
+  .command('export')
+  .description('Export from Figma');
+
+exp
+  .command('screenshot')
+  .description('Take a screenshot of selected node or current page')
+  .option('-o, --output <file>', 'Output file', 'screenshot.png')
+  .option('-s, --scale <number>', 'Export scale (1-4)', '2')
+  .option('-f, --format <format>', 'Format: png, jpg, svg, pdf', 'png')
+  .action((options) => {
+    checkConnection();
+    const format = options.format.toUpperCase();
+    const scale = parseFloat(options.scale);
+    const code = `(async () => {
+const sel = figma.currentPage.selection;
+const node = sel.length > 0 ? sel[0] : figma.currentPage;
+if (!node) return { error: 'No page or selection' };
+if (!('exportAsync' in node)) return { error: 'Node cannot be exported' };
+const bytes = await node.exportAsync({ format: ${JSON.stringify(format)}, constraint: { type: 'SCALE', value: ${scale} } });
+return {
+  name: node.name,
+  id: node.id,
+  width: Math.round(node.width * ${scale}),
+  height: Math.round(node.height * ${scale}),
+  bytes: Array.from(bytes)
+};
+})()`;
+    const result = figmaEvalSync(code);
+    if (result.error) {
+      console.error(chalk.red('✗'), result.error);
+      process.exit(1);
+    }
+    const buffer = Buffer.from(result.bytes);
+    const outputFile = options.output === 'screenshot.png' && format !== 'PNG'
+      ? `screenshot.${format.toLowerCase()}`
+      : options.output;
+    writeFileSync(outputFile, buffer);
+    console.log(chalk.green('✓'), `Screenshot: ${result.name} (${result.width}x${result.height}) → ${outputFile}`);
+  });
+
+exp
+  .command('node <nodeId>')
+  .description('Export a node by ID as PNG')
+  .option('-o, --output <file>', 'Output file', 'node-export.png')
+  .option('-s, --scale <number>', 'Export scale', '2')
+  .option('-f, --format <format>', 'Format: png, svg, pdf, jpg', 'png')
+  .action((nodeId, options) => {
+    checkConnection();
+    const format = options.format.toUpperCase();
+    const scale = parseFloat(options.scale);
+    const code = `(async () => {
+const node = await figma.getNodeByIdAsync(${JSON.stringify(nodeId)});
+if (!node) return { error: 'Node not found: ${nodeId}' };
+if (!('exportAsync' in node)) return { error: 'Node cannot be exported' };
+const bytes = await node.exportAsync({ format: ${JSON.stringify(format)}, constraint: { type: 'SCALE', value: ${scale} } });
+return {
+  name: node.name,
+  id: node.id,
+  width: node.width,
+  height: node.height,
+  bytes: Array.from(bytes)
+};
+})()`;
+    const result = figmaEvalSync(code);
+    if (result.error) {
+      console.error(chalk.red('✗'), result.error);
+      process.exit(1);
+    }
+    const buffer = Buffer.from(result.bytes);
+    const outputFile = options.output === 'node-export.png' && format !== 'PNG'
+      ? `node-export.${format.toLowerCase()}`
+      : options.output;
+    writeFileSync(outputFile, buffer);
+    console.log(chalk.green('✓'), `Exported ${result.name} (${result.width}x${result.height}) to ${outputFile}`);
+  });
+
+exp
+  .command('css')
+  .description('Export variables as CSS custom properties')
+  .action(() => {
+    checkConnection();
+    const code = `(async () => {
+const vars = await figma.variables.getLocalVariablesAsync();
+const css = vars.map(v => {
+  const val = Object.values(v.valuesByMode)[0];
+  if (v.resolvedType === 'COLOR') {
+    const hex = '#' + [val.r, val.g, val.b].map(n => Math.round(n*255).toString(16).padStart(2,'0')).join('');
+    return '  --' + v.name.replace(/\\//g, '-') + ': ' + hex + ';';
+  }
+  return '  --' + v.name.replace(/\\//g, '-') + ': ' + val + (v.resolvedType === 'FLOAT' ? 'px' : '') + ';';
+}).join('\\n');
+return ':root {\\n' + css + '\\n}';
+})()`;
+    const result = figmaUse(`eval "${code.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { silent: true });
+    console.log(result);
+  });
+
+exp
+  .command('tailwind')
+  .description('Export color variables as Tailwind config')
+  .action(() => {
+    checkConnection();
+    const code = `(async () => {
+const vars = await figma.variables.getLocalVariablesAsync();
+const colorVars = vars.filter(v => v.resolvedType === 'COLOR');
+const colors = {};
+colorVars.forEach(v => {
+  const val = Object.values(v.valuesByMode)[0];
+  const hex = '#' + [val.r, val.g, val.b].map(n => Math.round(n*255).toString(16).padStart(2,'0')).join('');
+  const parts = v.name.split('/');
+  if (parts.length === 2) {
+    if (!colors[parts[0]]) colors[parts[0]] = {};
+    colors[parts[0]][parts[1]] = hex;
+  } else {
+    colors[v.name.replace(/\\//g, '-')] = hex;
+  }
+});
+return JSON.stringify({ theme: { extend: { colors } } }, null, 2);
+})()`;
+    const result = figmaUse(`eval "${code.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { silent: true });
+    console.log(result);
+  });
+
+// ============ VERIFY (AI Screenshot Check) ============
+
+program
+  .command('verify [nodeId]')
+  .description('Take a small screenshot for AI verification (returns base64 or saves to file)')
+  .option('-s, --scale <number>', 'Export scale (default: 0.5 for small size)', '0.5')
+  .option('--max <pixels>', 'Max dimension in pixels (default: 2000)', '2000')
+  .option('--save [path]', 'Save as PNG file (default: /tmp/figma-verify-{id}.png)')
+  .action((nodeId, options) => {
+    checkConnection();
+    const scale = parseFloat(options.scale);
+    const maxDim = parseInt(options.max);
+
+    const code = `(async () => {
+      let node;
+      ${nodeId ? `node = await figma.getNodeByIdAsync(${JSON.stringify(nodeId)});` : `
+      const sel = figma.currentPage.selection;
+      node = sel.length > 0 ? sel[0] : null;
+      `}
+      if (!node) return { error: 'No node selected or found' };
+      if (!('exportAsync' in node)) return { error: 'Node cannot be exported' };
+
+      // Calculate optimal scale to stay under max dimension
+      const nodeWidth = node.width || 100;
+      const nodeHeight = node.height || 100;
+      let finalScale = ${scale};
+      const maxNodeDim = Math.max(nodeWidth, nodeHeight);
+      if (maxNodeDim * finalScale > ${maxDim}) {
+        finalScale = ${maxDim} / maxNodeDim;
+      }
+      // Ensure we don't exceed 8000px (API limit)
+      if (maxNodeDim * finalScale > 7500) {
+        finalScale = 7500 / maxNodeDim;
+      }
+
+      const bytes = await node.exportAsync({
+        format: 'PNG',
+        constraint: { type: 'SCALE', value: finalScale }
+      });
+
+      // Convert to base64
+      const base64 = figma.base64Encode(bytes);
+
+      return {
+        name: node.name,
+        id: node.id,
+        width: Math.round(nodeWidth * finalScale),
+        height: Math.round(nodeHeight * finalScale),
+        scale: finalScale,
+        base64: base64
+      };
+    })()`;
+
+    const result = figmaEvalSync(code);
+    if (result.error) {
+      console.error(chalk.red('✗'), result.error);
+      process.exit(1);
+    }
+
+    // Save to file if --save option provided
+    if (options.save !== undefined) {
+      const safeId = result.id.replace(/:/g, '-');
+      const savePath = typeof options.save === 'string'
+        ? options.save
+        : `/tmp/figma-verify-${safeId}.png`;
+
+      const buffer = Buffer.from(result.base64, 'base64');
+      writeFileSync(savePath, buffer);
+
+      console.log(JSON.stringify({
+        name: result.name,
+        id: result.id,
+        width: result.width,
+        height: result.height,
+        saved: savePath
+      }));
+    } else {
+      // Output as JSON for easy parsing
+      console.log(JSON.stringify({
+        name: result.name,
+        id: result.id,
+        width: result.width,
+        height: result.height,
+        base64: result.base64
+      }));
+    }
+  });
+
+// ============ EVAL ============
+
+program
+  .command('eval [code]')
+  .description('Execute JavaScript in Figma plugin context')
+  .option('-f, --file <path>', 'Run code from file instead of argument')
+  .action(async (code, options) => {
+    checkConnection();
+    let jsCode = code ? unescapeShell(code) : code;
+
+    // If --file option provided, read code from file
+    if (options.file) {
+      if (!existsSync(options.file)) {
+        console.log(chalk.red('✗ File not found: ' + options.file));
+        return;
+      }
+      jsCode = readFileSync(options.file, 'utf8');
+    }
+
+    if (!jsCode) {
+      console.log(chalk.red('✗ No code provided. Use: eval "code" or eval --file /path/to/script.js'));
+      return;
+    }
+
+    // Always prefer async daemon (more reliable, no shell timeout issues)
+    if (isDaemonRunning()) {
+      try {
+        const result = await daemonExec('eval', { code: jsCode });
+        if (result !== undefined && result !== null) {
+          console.log(typeof result === 'object' ? JSON.stringify(result, null, 2) : result);
+        }
+        return;
+      } catch (e) {
+        // Check if this is a connection/daemon error vs user code error
+        const isConnectionError = e.message.includes('ECONNREFUSED') ||
+                                  e.message.includes('fetch failed') ||
+                                  e.message.includes('network') ||
+                                  e.message.includes('timeout') ||
+                                  e.message.includes('disconnected');
+        if (isConnectionError) {
+          // Connection/daemon error - fall back to sync path
+          console.log(chalk.yellow('⚠ Daemon error, trying sync path...'));
+        } else {
+          // User code error - display directly, don't fall back
+          console.log(chalk.red('✗ ' + e.message));
+          return;
+        }
+      }
+    }
+
+    // Sync fallback (when daemon not running)
+    try {
+      const result = figmaEvalSync(jsCode);
+      if (result !== undefined && result !== null) {
+        console.log(typeof result === 'object' ? JSON.stringify(result, null, 2) : result);
+      }
+    } catch (error) {
+      console.log(chalk.red('✗ ' + error.message));
+    }
+  });
+
+// Run command - alias for eval --file (uses async for better performance)
+program
+  .command('run <file>')
+  .description('Run JavaScript file in Figma (alias for eval --file)')
+  .action(async (file) => {
+    checkConnection();
+    if (!existsSync(file)) {
+      console.log(chalk.red('✗ File not found: ' + file));
+      return;
+    }
+    const code = readFileSync(file, 'utf8');
+    try {
+      // Use async daemon path for better performance with long scripts
+      if (isDaemonRunning()) {
+        const result = await daemonExec('eval', { code });
+        if (result !== undefined) {
+          console.log(typeof result === 'object' ? JSON.stringify(result, null, 2) : result);
+        }
+      } else {
+        // Fallback to sync path
+        figmaUse(`eval "${code.replace(/"/g, '\\"')}"`);
+      }
+    } catch (e) {
+      console.log(chalk.red('✗ ' + e.message));
+    }
+  });
+
+// ============ PASSTHROUGH ============
+
+program
+  .command('raw <command...>')
+  .description('Run raw figma-use command')
+  .action((command) => {
+    checkConnection();
+    figmaUse(command.join(' '));
+  });
+

@@ -6,11 +6,12 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "figma-ds-cli": "src/index.js"
+    "figma-ds-cli": "src/index.js",
+    "figma-cli": "src/index.js"
   },
   "files": [
     "src",
-    "bin"
+    "plugin"
   ],
   "keywords": [
     "figma",

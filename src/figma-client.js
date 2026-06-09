@@ -255,7 +255,7 @@ export class FigmaClient {
    * Get all local variables
    */
   async getVariables(type = null) {
-    const typeFilter = type ? `'${type}'` : 'null';
+    const typeFilter = type ? JSON.stringify(type) : 'null';
     return await this.eval(`
       (function() {
         const vars = figma.variables.getLocalVariables(${typeFilter});
@@ -298,7 +298,7 @@ export class FigmaClient {
    * Parse multiple JSX strings into a SINGLE eval call (10x faster)
    * Returns code that creates all frames and returns array of { id, name }
    */
-  parseJSXBatch(jsxArray, options = {}) {
+  async parseJSXBatch(jsxArray, options = {}) {
     const gap = options.gap || 40;
     const vertical = options.vertical || false;
 
@@ -314,6 +314,10 @@ export class FigmaClient {
       return { props, children: childElements };
     });
 
+    // Pre-fetch any icon SVGs used in any frame (shared child generator
+    // renders real Iconify SVGs, falling back to placeholders offline)
+    const iconSvgMap = await this.prefetchIconSvgs(parsed.flatMap(p => p.children));
+
     // Collect all fonts needed
     const allFonts = new Set();
     let anyUsesVars = false;
@@ -324,21 +328,9 @@ export class FigmaClient {
       if (this.isVarRef(bg)) anyUsesVars = true;
       if (stroke && this.isVarRef(stroke)) anyUsesVars = true;
 
-      const collectFonts = (items) => {
-        items.forEach(item => {
-          if (item._type === 'text') {
-            const weight = item.weight || 'regular';
-            const style = weight === 'bold' ? 'Bold' : weight === 'medium' ? 'Medium' : weight === 'semibold' ? 'Semi Bold' : 'Regular';
-            allFonts.add(style);
-            if (item.color && this.isVarRef(item.color)) anyUsesVars = true;
-          } else if (item._type === 'frame') {
-            if (item.bg && this.isVarRef(item.bg)) anyUsesVars = true;
-            if (item.stroke && this.isVarRef(item.stroke)) anyUsesVars = true;
-            if (item._children) collectFonts(item._children);
-          }
-        });
-      };
-      collectFonts(children);
+      const collected = this.collectFontsAndVarUsage(children);
+      collected.fonts.forEach(f => allFonts.add(f));
+      if (collected.usesVars) anyUsesVars = true;
     });
 
     // Font caching: only load fonts not yet loaded in this session
@@ -506,102 +498,11 @@ export class FigmaClient {
       const justifyVal = alignMap[justify] || 'MIN';
 
       const fillCode = this.generateFillCode(bg, `f${frameIdx}`);
-      const strokeCode = stroke ? this.generateStrokeCode(stroke, `f${frameIdx}`) : { code: '' };
+      const strokeCode = stroke ? this.generateStrokeCode(stroke, `f${frameIdx}`, props.strokeWidth || 1, props.strokeAlign || null) : { code: '' };
       const effectsCode = this.generateEffectsCode(props, `f${frameIdx}`);
       const imageCode = props.image ? this.generateImageFillCode(props.image, `f${frameIdx}`, props.imageScale) : '';
 
-      // Generate child code
-      let childCounter = 0;
-      const generateChildCode = (items, parentVar, parentFlex) => {
-        return items.map(item => {
-          const idx = `${frameIdx}_${childCounter++}`;
-          if (item._type === 'text') {
-            const weight = item.weight || 'regular';
-            const style = weight === 'bold' ? 'Bold' : weight === 'medium' ? 'Medium' : weight === 'semibold' ? 'Semi Bold' : 'Regular';
-            const size = item.size || 14;
-            const color = item.color || '#000000';
-            const fillWidth = item.w === 'fill';
-            const textAlign = item.align || 'left';
-            const textAlignVal = textAlign === 'center' ? 'CENTER' : textAlign === 'right' ? 'RIGHT' : 'LEFT';
-            const textFillCode = this.generateFillCode(color, `el${idx}`);
-            // Auto-FILL text in column layouts so Safe Mode wraps text correctly.
-            // Without this, text inside fixed-width col-flex parents overflows in plugin sandbox.
-            const isCol = parentFlex === 'col' || parentFlex === 'column';
-            const autoFill = isCol && !fillWidth;
-            return `
-          const el${idx} = figma.createText();
-          el${idx}.fontName = {family:'Inter',style:'${style}'};
-          el${idx}.characters = ${JSON.stringify(item.content || '')};
-          el${idx}.fontSize = ${size};
-          ${textFillCode.code}
-          el${idx}.textAlignHorizontal = '${textAlignVal}';
-          ${parentVar}.appendChild(el${idx});
-          ${fillWidth ? `el${idx}.layoutSizingHorizontal = 'FILL';` : ''}
-          ${autoFill ? `// Auto-FILL: text in col layout needs FILL for Safe Mode wrapping
-          if (${parentVar}.layoutMode === 'VERTICAL' && (${parentVar}.counterAxisSizingMode === 'FIXED' || ${parentVar}.primaryAxisSizingMode === 'FIXED')) {
-            try { el${idx}.layoutSizingHorizontal = 'FILL'; el${idx}.textAutoResize = 'HEIGHT'; } catch(e) {}
-          }` : ''}`;
-          } else if (item._type === 'frame') {
-            const fName = item.name || 'Frame';
-            const fillW = item.w === 'fill';
-            const fillH = item.h === 'fill';
-            const hasExplicitW = (item.w !== undefined || item.width !== undefined) && !fillW;
-            const hasExplicitH = (item.h !== undefined || item.height !== undefined) && !fillH;
-            const fWidth = hasExplicitW ? (item.w || item.width) : 100;
-            const fHeight = hasExplicitH ? (item.h || item.height) : 40;
-            // Frames without explicit bg should be transparent (not white)
-            const fBg = item.bg || item.fill || null;
-            const fStroke = item.stroke || null;
-            const fRounded = item.rounded || item.radius || 0;
-            const fFlex = item.flex || 'row';  // Default to row (always auto-layout like single render)
-            const fGap = item.gap || 0;
-            const fP = item.p !== undefined ? item.p : 0;
-            const fPx = item.px !== undefined ? item.px : fP;
-            const fPy = item.py !== undefined ? item.py : fP;
-            const fPt = item.pt !== undefined ? Number(item.pt) : Number(fPy);
-            const fPr = item.pr !== undefined ? Number(item.pr) : Number(fPx);
-            const fPb = item.pb !== undefined ? Number(item.pb) : Number(fPy);
-            const fPl = item.pl !== undefined ? Number(item.pl) : Number(fPx);
-            const fGrow = item.grow || 0;
-            const fJustify = item.justify || 'center';
-            const fItems = item.items || 'center';
-            const justifyMap = { start: 'MIN', center: 'CENTER', end: 'MAX', between: 'SPACE_BETWEEN' };
-            const fJustifyVal = justifyMap[fJustify] || 'CENTER';
-            const fItemsVal = alignMap[fItems] || 'CENTER';
-            const fFillCode = fBg ? this.generateFillCode(fBg, `el${idx}`) : { code: `el${idx}.fills = [];`, usesVars: false };
-            const fStrokeCode = fStroke ? this.generateStrokeCode(fStroke, `el${idx}`) : { code: '' };
-            const fEffectsCode = this.generateEffectsCode(item, `el${idx}`);
-            const nestedChildren = item._children ? generateChildCode(item._children, `el${idx}`, fFlex) : '';
-            return `
-          const el${idx} = figma.createFrame();
-          el${idx}.name = ${JSON.stringify(fName)};
-          el${idx}.layoutMode = '${fFlex === 'row' ? 'HORIZONTAL' : 'VERTICAL'}';
-          el${idx}.primaryAxisSizingMode = '${hasExplicitW ? 'FIXED' : 'AUTO'}';
-          el${idx}.counterAxisSizingMode = '${hasExplicitH ? 'FIXED' : 'AUTO'}';
-          ${hasExplicitW || hasExplicitH ? `el${idx}.resize(${fWidth}, ${fHeight});` : ''}
-          el${idx}.cornerRadius = ${fRounded};
-          ${fFillCode.code}
-          ${fStrokeCode.code}
-          ${fEffectsCode}
-          el${idx}.itemSpacing = ${fGap};
-          el${idx}.paddingTop = ${fPt};
-          el${idx}.paddingBottom = ${fPb};
-          el${idx}.paddingLeft = ${fPl};
-          el${idx}.paddingRight = ${fPr};
-          el${idx}.primaryAxisAlignItems = '${fJustifyVal}';
-          el${idx}.counterAxisAlignItems = '${fItemsVal}';
-          ${parentVar}.appendChild(el${idx});
-          ${fillW ? `el${idx}.layoutSizingHorizontal = 'FILL';` : ''}
-          ${fillH ? `el${idx}.layoutSizingVertical = 'FILL';` : ''}
-          ${fGrow && parentFlex === 'row' ? `el${idx}.layoutSizingHorizontal = 'FILL';` : ''}
-          ${fGrow && parentFlex === 'col' ? `el${idx}.layoutSizingVertical = 'FILL';` : ''}
-          ${nestedChildren}`;
-          }
-          return '';
-        }).join('\n');
-      };
-
-      const childCode = generateChildCode(children, `f${frameIdx}`, flex);
+      const childCode = this.generateChildrenCode(children, `f${frameIdx}`, flex, { counter: { value: 0 }, prefix: `${frameIdx}_`, iconSvgMap });
 
       return `
         const f${frameIdx} = figma.createFrame();
@@ -652,6 +553,7 @@ export class FigmaClient {
         }
 
         const results = [];
+        let __currentNode = '';
         ${framesCodes}
         // Surface unresolved var: references back to the caller. Array-prop
         // shorthand is lost by JSON.stringify, so wrap in an object when we
@@ -962,98 +864,46 @@ export class FigmaClient {
     return children;
   }
 
-  generateCode(props, children, iconSvgMap = {}) {
-    const name = props.name || 'Frame';
-    const rawWidth = props.w || props.width;
-    const rawHeight = props.h || props.height;
-    // Support w="fill" / w="hug" (and same for h) on the root frame. Both
-    // are sizing keywords — never interpolate raw into resize() or you get
-    // ReferenceError: 'fill' / 'hug' is not defined. (NB: don't shadow the
-    // existing `hugWidth/Height` from the `hug` prop below — that one is set
-    // via `hug="w"` / `hug="h"` / `hug="both"` and resolves the same flag.)
-    const fillWidth = rawWidth === 'fill';
-    const fillHeight = rawHeight === 'fill';
-    const wHug = rawWidth === 'hug';
-    const hHug = rawHeight === 'hug';
-    const isNumeric = v => v !== undefined && v !== 'fill' && v !== 'hug';
-    const numericWidth = isNumeric(rawWidth) ? rawWidth : undefined;
-    const numericHeight = isNumeric(rawHeight) ? rawHeight : undefined;
-    const hasExplicitWidth = numericWidth !== undefined;
-    const hasExplicitHeight = numericHeight !== undefined;
-    const width = numericWidth !== undefined ? numericWidth : 320;
-    const height = numericHeight !== undefined ? numericHeight : 200;
-    const bg = props.bg || props.fill || null;
-    const stroke = props.stroke || null;
-    const strokeWidth = props.strokeWidth || 1;
-    const strokeAlignProp = props.strokeAlign || null;
-    const rounded = props.rounded || props.radius || 0;
-    const flex = props.flex || 'col';
-    const gap = props.gap || 0;
-    const p = props.p || props.padding || 0;
-    const px = props.px || p;
-    const py = props.py || p;
-    const align = props.items || props.align || 'MIN';
-    const justify = props.justify || 'MIN';
-    const useSmartPos = props.x === undefined;
-    const explicitX = props.x || 0;
-    const y = props.y || 0;
-    // New: clip defaults to false (don't clip auto-layout overflow). overflow="hidden" also sets clip.
-    const clip = props.clip === 'true' || props.clip === true || props.overflow === 'hidden';
-    // Generic node-level visuals — apply on the root frame too (single-render path)
-    const opacity = props.opacity !== undefined ? Number(props.opacity) : null;
-    const visible = props.visible === false || props.visible === 'false' ? false : null;
-    const locked = props.locked === true || props.locked === 'true' ? true : null;
-    // New: hug for auto-sizing (hug="both" | "w" | "h" | "width" | "height")
-    // OR the keyword form w="hug" / h="hug" set wHug/hHug above.
-    const hug = props.hug || '';
-    const hugWidth = wHug || hug === 'both' || hug === 'w' || hug === 'width';
-    const hugHeight = hHug || hug === 'both' || hug === 'h' || hug === 'height';
-    // New: wrap and wrapGap for horizontal layouts
-    const wrap = props.wrap === true || props.wrap === 'true';
-    const wrapGap = Number(props.wrapGap || props.counterAxisSpacing || 0);
-
-    // Track variable usage for fast binding
-    let usesVars = false;
-    const checkVarUsage = (value) => {
-      if (this.isVarRef(value)) usesVars = true;
-    };
-
-    // Check root frame for var usage
-    checkVarUsage(bg);
-    if (stroke) checkVarUsage(stroke);
-
-    // Collect all fonts and check variable usage recursively
+  /**
+   * Walk a parsed child tree and collect required font styles plus whether
+   * any var: reference is used. Shared by single render and batch render so
+   * both load the same fonts and detect vars in the same places (including
+   * icon colors and slot children, which the old batch collector missed).
+   */
+  collectFontsAndVarUsage(items) {
     const fonts = new Set();
-    const collectFontsAndVars = (items) => {
-      items.forEach(item => {
+    let usesVars = false;
+    const check = (v) => { if (this.isVarRef(v)) usesVars = true; };
+    const walk = (list) => {
+      list.forEach(item => {
         if (item._type === 'text') {
           const weight = item.weight || 'regular';
           const style = weight === 'bold' ? 'Bold' : weight === 'medium' ? 'Medium' : weight === 'semibold' ? 'Semi Bold' : 'Regular';
           fonts.add(style);
-          const color = item.color || '#000000';
-          checkVarUsage(color);
-        } else if (item._type === 'frame') {
-          const fBg = item.bg || item.fill || null;
-          const fStroke = item.stroke || null;
-          if (fBg) checkVarUsage(fBg);
-          if (fStroke) checkVarUsage(fStroke);
-          if (item._children) collectFontsAndVars(item._children);
+          check(item.color || '#000000');
+        } else if (item._type === 'frame' || item._type === 'slot') {
+          check(item.bg || item.fill || null);
+          if (item.stroke) check(item.stroke);
         } else if (item._type === 'rect' || item._type === 'image' || item._type === 'icon') {
-          const itemBg = item.bg || item.fill || item.color || item.c || '#e4e4e7';
-          checkVarUsage(itemBg);
+          check(item.bg || item.fill || item.color || item.c || '#e4e4e7');
         }
+        if (item._children) walk(item._children);
       });
     };
-    collectFontsAndVars(children);
+    walk(items);
+    return { fonts, usesVars };
+  }
 
-    // Font caching for single render
-    const fontStyles = Array.from(fonts);
-
-    // Generate child code recursively
-    let childCounter = 0;
-    const generateChildCode = (items, parentVar, parentFlex) => {
+  /**
+   * Generate Plugin API code for a list of parsed child elements.
+   * Shared by the single-render path (generateCode) and the batch path
+   * (parseJSXBatch) so both support the same child types and props.
+   * ctx: { counter: {value}, prefix: string (el-name prefix, e.g. '0_'),
+   *        iconSvgMap: {name: svg} }
+   */
+  generateChildrenCode(items, parentVar, parentFlex, ctx) {
       return items.map(item => {
-        const idx = childCounter++;
+        const idx = ctx.prefix + (ctx.counter.value++);
         if (item._type === 'text') {
           const weight = item.weight || 'regular';
           const style = weight === 'bold' ? 'Bold' : weight === 'medium' ? 'Medium' : weight === 'semibold' ? 'Semi Bold' : 'Regular';
@@ -1151,7 +1001,7 @@ export class FigmaClient {
           const fAlignVal = alignMap[fAlign] || 'CENTER';
           const fJustifyVal = alignMap[fJustify] || 'CENTER';
 
-          const nestedChildren = item._children ? generateChildCode(item._children, `el${idx}`, fFlex) : '';
+          const nestedChildren = item._children ? this.generateChildrenCode(item._children, `el${idx}`, fFlex, ctx) : '';
           const frameFillCode = fBg ? this.generateFillCode(fBg, `el${idx}`) : { code: `el${idx}.fills = [];`, usesVars: false };
           const frameStrokeCode = fStroke ? this.generateStrokeCode(fStroke, `el${idx}`, fStrokeWidth, fStrokeAlign) : { code: '' };
           const frameEffectsCode = this.generateEffectsCode(item, `el${idx}`);
@@ -1289,7 +1139,7 @@ export class FigmaClient {
           const icSize = item.size || item.s || 24;
           const icBg = item.color || item.c || '#71717a';
           const icName = item.name || 'Icon';
-          const svgData = iconSvgMap[icName];
+          const svgData = ctx.iconSvgMap[icName];
 
           if (svgData) {
             // Real SVG icon from Iconify
@@ -1377,7 +1227,7 @@ export class FigmaClient {
           const fillWidth = item.w === 'fill';
           const fillHeight = item.h === 'fill';
 
-          const nestedChildren = item._children ? generateChildCode(item._children, `slot${idx}`) : '';
+          const nestedChildren = item._children ? this.generateChildrenCode(item._children, `slot${idx}`, slotFlex, ctx) : '';
           const slotFillCode = slotBg ? this.generateFillCode(slotBg, `slot${idx}`) : { code: '' };
 
           return `
@@ -1405,9 +1255,77 @@ export class FigmaClient {
         }
         return '';
       }).join('\n');
+  }
+
+  generateCode(props, children, iconSvgMap = {}) {
+    const name = props.name || 'Frame';
+    const rawWidth = props.w || props.width;
+    const rawHeight = props.h || props.height;
+    // Support w="fill" / w="hug" (and same for h) on the root frame. Both
+    // are sizing keywords — never interpolate raw into resize() or you get
+    // ReferenceError: 'fill' / 'hug' is not defined. (NB: don't shadow the
+    // existing `hugWidth/Height` from the `hug` prop below — that one is set
+    // via `hug="w"` / `hug="h"` / `hug="both"` and resolves the same flag.)
+    const fillWidth = rawWidth === 'fill';
+    const fillHeight = rawHeight === 'fill';
+    const wHug = rawWidth === 'hug';
+    const hHug = rawHeight === 'hug';
+    const isNumeric = v => v !== undefined && v !== 'fill' && v !== 'hug';
+    const numericWidth = isNumeric(rawWidth) ? rawWidth : undefined;
+    const numericHeight = isNumeric(rawHeight) ? rawHeight : undefined;
+    const hasExplicitWidth = numericWidth !== undefined;
+    const hasExplicitHeight = numericHeight !== undefined;
+    const width = numericWidth !== undefined ? numericWidth : 320;
+    const height = numericHeight !== undefined ? numericHeight : 200;
+    const bg = props.bg || props.fill || null;
+    const stroke = props.stroke || null;
+    const strokeWidth = props.strokeWidth || 1;
+    const strokeAlignProp = props.strokeAlign || null;
+    const rounded = props.rounded || props.radius || 0;
+    const flex = props.flex || 'col';
+    const gap = props.gap || 0;
+    const p = props.p || props.padding || 0;
+    const px = props.px || p;
+    const py = props.py || p;
+    const align = props.items || props.align || 'MIN';
+    const justify = props.justify || 'MIN';
+    const useSmartPos = props.x === undefined;
+    const explicitX = props.x || 0;
+    const y = props.y || 0;
+    // New: clip defaults to false (don't clip auto-layout overflow). overflow="hidden" also sets clip.
+    const clip = props.clip === 'true' || props.clip === true || props.overflow === 'hidden';
+    // Generic node-level visuals — apply on the root frame too (single-render path)
+    const opacity = props.opacity !== undefined ? Number(props.opacity) : null;
+    const visible = props.visible === false || props.visible === 'false' ? false : null;
+    const locked = props.locked === true || props.locked === 'true' ? true : null;
+    // New: hug for auto-sizing (hug="both" | "w" | "h" | "width" | "height")
+    // OR the keyword form w="hug" / h="hug" set wHug/hHug above.
+    const hug = props.hug || '';
+    const hugWidth = wHug || hug === 'both' || hug === 'w' || hug === 'width';
+    const hugHeight = hHug || hug === 'both' || hug === 'h' || hug === 'height';
+    // New: wrap and wrapGap for horizontal layouts
+    const wrap = props.wrap === true || props.wrap === 'true';
+    const wrapGap = Number(props.wrapGap || props.counterAxisSpacing || 0);
+
+    // Track variable usage for fast binding
+    let usesVars = false;
+    const checkVarUsage = (value) => {
+      if (this.isVarRef(value)) usesVars = true;
     };
 
-    const childCode = generateChildCode(children, 'frame', flex);
+    // Check root frame for var usage
+    checkVarUsage(bg);
+    if (stroke) checkVarUsage(stroke);
+
+    // Collect all fonts and check variable usage recursively
+    const collected = this.collectFontsAndVarUsage(children);
+    const fonts = collected.fonts;
+    if (collected.usesVars) usesVars = true;
+
+    // Font caching for single render
+    const fontStyles = Array.from(fonts);
+
+    const childCode = this.generateChildrenCode(children, 'frame', flex, { counter: { value: 0 }, prefix: '', iconSvgMap });
 
     // Map align/justify to Figma values for root frame
     const alignMap = { start: 'MIN', center: 'CENTER', end: 'MAX', stretch: 'STRETCH' };
@@ -1577,6 +1495,8 @@ export class FigmaClient {
 
   hexToRgb(hex) {
     if (!hex || !hex.startsWith('#')) return null;
+    // Valid: #rgb, #rrggbb, #rrggbbaa (alpha handled by callers)
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex)) return null;
     let r, g, b;
     if (hex.length === 4) {
       r = parseInt(hex[1] + hex[1], 16) / 255;
@@ -1638,7 +1558,7 @@ export class FigmaClient {
         // even with a global --collection scope active. Falls back to vars[name].
         // Pass the requested key so unresolved names get reported instead of
         // silently rendering grey.
-        code: `${elementVar}.${property} = [boundFill(lookupVar('${varName}'), '${varName}')];`,
+        code: `${elementVar}.${property} = [boundFill(lookupVar(${JSON.stringify(varName)}), ${JSON.stringify(varName)})];`,
         usesVars: true
       };
     }
@@ -1937,11 +1857,11 @@ export class FigmaClient {
    * Generate stroke code - either hex color or bound variable
    */
   generateStrokeCode(value, elementVar, strokeWidth = 1, strokeAlign = null) {
-    const alignCode = strokeAlign ? ` ${elementVar}.strokeAlign = '${strokeAlign.toUpperCase()}';` : '';
+    const alignCode = strokeAlign ? ` ${elementVar}.strokeAlign = ${JSON.stringify(strokeAlign.toUpperCase())};` : '';
     if (this.isVarRef(value)) {
       const varName = this.getVarName(value);
       return {
-        code: `${elementVar}.strokes = [boundFill(lookupVar('${varName}'), '${varName}')]; ${elementVar}.strokeWeight = ${strokeWidth};${alignCode}`,
+        code: `${elementVar}.strokes = [boundFill(lookupVar(${JSON.stringify(varName)}), ${JSON.stringify(varName)})]; ${elementVar}.strokeWeight = ${strokeWidth};${alignCode}`,
         usesVars: true
       };
     } else {
@@ -2334,7 +2254,7 @@ export class FigmaClient {
         const results = [];
         function search(node) {
           if (node.name && node.name.includes(${JSON.stringify(name)})) {
-            ${type ? `if (node.type === '${type}')` : ''} {
+            ${type ? `if (node.type === ${JSON.stringify(type)})` : ''} {
               results.push({ id: node.id, type: node.type, name: node.name });
             }
           }
@@ -2351,7 +2271,7 @@ export class FigmaClient {
    */
   async findByType(type) {
     return await this.eval(`
-      figma.currentPage.findAll(n => n.type === '${type}').slice(0, 100).map(n => ({
+      figma.currentPage.findAll(n => n.type === ${JSON.stringify(type)}).slice(0, 100).map(n => ({
         id: n.id, name: n.name, x: Math.round(n.x), y: Math.round(n.y)
       }))
     `);
@@ -2368,7 +2288,7 @@ export class FigmaClient {
       (function() {
         const col = figma.variables.getVariableCollectionById(${JSON.stringify(collectionId)});
         if (!col) return { error: 'Collection not found' };
-        const variable = figma.variables.createVariable(${JSON.stringify(name)}, col, '${type}');
+        const variable = figma.variables.createVariable(${JSON.stringify(name)}, col, ${JSON.stringify(type)});
         ${value ? `variable.setValueForMode(col.defaultModeId, ${type === 'COLOR' ? this.hexToRgbCode(value) : JSON.stringify(value)});` : ''}
         return { id: variable.id, name: variable.name };
       })()
@@ -2523,8 +2443,8 @@ export class FigmaClient {
         const node = figma.getNodeById(${JSON.stringify(nodeId)});
         if (!node) return { error: 'Node not found' };
         if (node.layoutSizingHorizontal !== undefined) {
-          node.layoutSizingHorizontal = '${horizontal}';
-          node.layoutSizingVertical = '${vertical}';
+          node.layoutSizingHorizontal = ${JSON.stringify(horizontal)};
+          node.layoutSizingVertical = ${JSON.stringify(vertical)};
         }
         return { success: true };
       })()
@@ -3011,7 +2931,7 @@ export class FigmaClient {
           const node = figma.getNodeById(${JSON.stringify(nodeId)});
           if (!node) return { error: 'Node not found' };
 
-          const bytes = await node.exportAsync({ format: '${format}', scale: ${scale} });
+          const bytes = await node.exportAsync({ format: ${JSON.stringify(format)}, scale: ${scale} });
           let binary = '';
           for (let i = 0; i < bytes.length; i++) {
             binary += String.fromCharCode(bytes[i]);
@@ -3265,7 +3185,7 @@ export class FigmaClient {
         // Note: Figma doesn't have native color matrix, this is a visual approximation
         clone.opacity = 0.9;
 
-        return { id: clone.id, name: clone.name, type: '${type}' };
+        return { id: clone.id, name: clone.name, type: ${JSON.stringify(type)} };
       })()
     `);
   }

@@ -30,7 +30,12 @@
 ```
 figma-cli/
 ├── src/
-│   └── index.js      # Main CLI entry point, all commands
+│   ├── index.js          # Entry point: imports lib + command modules, program.parse()
+│   ├── lib/cli-core.js   # Shared core: daemon plumbing, eval helpers, config, program
+│   ├── commands/         # One module per command group (setup, variables, tokens,
+│   │                     # render, a11y, slots, variants, ... 18 modules)
+│   ├── figma-client.js   # JSX parser + Figma Plugin API code generator
+│   └── daemon.js         # Background daemon (CDP + plugin WebSocket bridge)
 ├── package.json      # npm package config
 ├── README.md         # User documentation
 └── docs/             # Technical documentation

@@ -90,3 +90,37 @@ test('assignSemanticNames suffixes duplicates with -alt, -3, -4', () => {
   assert.equal(named['accent-alt'], '#d1242f');
   assert.equal(named['accent-3'], '#8250df');
 });
+
+import { buildTypeScale, inferBaseUnit, nameRadii } from '../src/design-extract.js';
+
+test('buildTypeScale names styles by size rank (display > h1 > … > body > caption)', () => {
+  const typo = new Map([
+    ['Inter|Bold|40|48|', 5],
+    ['Inter|Semi Bold|24|32|', 10],
+    ['Inter|Regular|14|20|', 100],
+    ['Inter|Regular|12|16|', 30],
+  ]);
+  const scale = buildTypeScale(typo);
+  const names = Object.keys(scale);
+  assert.ok(names.includes('display'));
+  assert.ok(names.includes('body'));
+  assert.ok(names.includes('caption'));
+  assert.equal(scale['body'].fontSize, 14);
+  assert.equal(scale['body'].fontFamily, 'Inter');
+  assert.equal(scale['body'].fontWeight, 400);   // 'Regular' → 400
+  assert.equal(scale['display'].fontWeight, 700); // 'Bold' → 700
+});
+
+test('inferBaseUnit picks the dominant grid from spacing counts', () => {
+  assert.equal(inferBaseUnit(new Map([[8, 50], [16, 40], [24, 20], [4, 10]])), 4);
+  assert.equal(inferBaseUnit(new Map([[8, 50], [16, 40], [32, 10]])), 8);
+  assert.equal(inferBaseUnit(new Map()), 8); // sensible default
+});
+
+test('nameRadii produces sm/md/lg names sorted by value', () => {
+  const named = nameRadii(new Map([[2, 50], [6, 80], [12, 20], [9999, 5]]));
+  assert.equal(named['radius-sm'], 2);
+  assert.equal(named['radius-md'], 6);
+  assert.equal(named['radius-lg'], 12);
+  assert.equal(named['radius-full'], 9999);
+});

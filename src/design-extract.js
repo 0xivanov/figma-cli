@@ -176,3 +176,90 @@ export function assignSemanticNames(colors) {
   }
   return out;
 }
+
+const WEIGHT_MAP = {
+  thin: 100, extralight: 200, 'extra light': 200, light: 300, regular: 400,
+  medium: 500, semibold: 600, 'semi bold': 600, bold: 700,
+  extrabold: 800, 'extra bold': 800, black: 900,
+};
+
+/** 'Semi Bold Italic' → 600. Unknown styles → 400. */
+export function styleToWeight(style) {
+  const s = String(style || '').toLowerCase().replace(/\s*italic\s*/, '').trim();
+  return WEIGHT_MAP[s] || 400;
+}
+
+/**
+ * Map a typography census (Map<'family|style|size|lh|ls', count>) onto the
+ * scale names parseDesignMd's typography import understands:
+ * display (>=36), h1..h6 (descending unique sizes >= body), body-lg, body,
+ * body-sm, caption (<=12). Within a size, highest-usage entry wins the base
+ * name; further entries get '-2', '-3' suffixes.
+ */
+export function buildTypeScale(typography) {
+  const entries = [...typography.entries()].map(([key, count]) => {
+    const [family, style, size, lh, ls] = key.split('|');
+    return { family, style, size: parseFloat(size), lh: lh ? parseFloat(lh) : undefined, ls: ls ? parseFloat(ls) : undefined, count };
+  }).filter(e => Number.isFinite(e.size));
+  entries.sort((a, b) => b.size - a.size || b.count - a.count);
+
+  const nameFor = (size, headingIdx) => {
+    if (size >= 36) return 'display';
+    if (size >= 18 && headingIdx <= 6) return `h${headingIdx}`;
+    if (size >= 16) return 'body-lg';
+    if (size >= 13) return 'body';
+    if (size > 12) return 'body-sm';
+    return 'caption';
+  };
+  const out = {};
+  const usedNames = new Map();
+  let headingIdx = 1;
+  let lastHeadingSize = null;
+  for (const e of entries) {
+    let base = nameFor(e.size, headingIdx);
+    if (base.startsWith('h')) {
+      if (lastHeadingSize !== null && e.size < lastHeadingSize) headingIdx += 1;
+      base = nameFor(e.size, headingIdx);
+      lastHeadingSize = e.size;
+    }
+    const nth = (usedNames.get(base) || 0) + 1;
+    usedNames.set(base, nth);
+    const name = nth === 1 ? base : `${base}-${nth}`;
+    out[name] = {
+      fontFamily: e.family, fontSize: e.size, fontWeight: styleToWeight(e.style),
+      ...(e.lh !== undefined ? { lineHeight: e.lh } : {}),
+      ...(e.ls !== undefined ? { letterSpacing: e.ls } : {}),
+    };
+  }
+  return out;
+}
+
+/** Most plausible base unit (2, 4 or 8) from a spacing census. Default 8. */
+export function inferBaseUnit(spacing) {
+  if (!spacing.size) return 8;
+  const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+  const values = [...spacing.keys()].filter(v => Number.isFinite(v) && v > 0);
+  if (!values.length) return 8;
+  const g = values.reduce((acc, v) => gcd(acc, v));
+  if (g >= 8) return 8;
+  if (g >= 4) return 4;
+  return 2;
+}
+
+/** Radius census → { 'radius-sm': 2, 'radius-md': 6, ... , 'radius-full': 9999 }. */
+export function nameRadii(radii) {
+  const values = [...radii.keys()].sort((a, b) => a - b);
+  const out = {};
+  const tiers = ['radius-sm', 'radius-md', 'radius-lg'];
+  let tierIdx = 0;
+  const usedNames = new Map();
+  for (const v of values) {
+    let base;
+    if (v >= 999) base = 'radius-full';
+    else { base = tiers[Math.min(tierIdx, tiers.length - 1)]; tierIdx += 1; }
+    const nth = (usedNames.get(base) || 0) + 1;
+    usedNames.set(base, nth);
+    out[nth === 1 ? base : `${base}-${nth}`] = v;
+  }
+  return out;
+}

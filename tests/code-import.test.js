@@ -73,3 +73,28 @@ test('css: tailwind v4 @theme — color-/radius-/spacing-/font- prefixes', () =>
   assert.equal(tokens.spacing['spacing-gutter'], 24);
   assert.deepEqual(tokens.fonts, ['Inter']);
 });
+
+import { parseTailwindConfig } from '../src/code-import/tailwind.js';
+
+test('tailwind: flattens nested color scales, skips non-colors, merges extend', async () => {
+  const { tokens } = await parseTailwindConfig(join(FIX, 'tailwind.config.cjs'));
+  assert.equal(tokens.color['blue-500'], '#3b82f6');
+  assert.equal(tokens.color['white'], '#ffffff');
+  assert.equal(tokens.color['brand'], '#0969da');       // from extend
+  assert.equal(tokens.color['transparent'], undefined); // skipped
+});
+
+test('tailwind: borderRadius/spacing rem→px, fontFamily, fontSize tuples', async () => {
+  const { tokens } = await parseTailwindConfig(join(FIX, 'tailwind.config.cjs'));
+  assert.equal(tokens.radius['radius-md'], 6);
+  assert.equal(tokens.radius['radius-full'], 9999);
+  assert.equal(tokens.spacing['spacing-4'], 16);
+  assert.deepEqual(tokens.fonts.sort(), ['Inter', 'SF Mono']);
+  assert.equal(tokens.typography['text-sm'].fontSize, 14);
+  assert.equal(tokens.typography['text-sm'].lineHeight, 20);
+  assert.equal(tokens.typography['text-base'].fontSize, 16);
+});
+
+test('tailwind: unloadable config throws a helpful error', async () => {
+  await assert.rejects(() => parseTailwindConfig('/nonexistent/tailwind.config.js'), /load|find/i);
+});

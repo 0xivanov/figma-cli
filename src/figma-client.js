@@ -545,8 +545,8 @@ export class FigmaClient {
         ${strokeCode.code}
         ${effectsCode}
         ${imageCode}
-        f${frameIdx}.layoutMode = '${flex === 'row' ? 'HORIZONTAL' : 'VERTICAL'}';
-        ${wrap && flex === 'row' ? `f${frameIdx}.layoutWrap = 'WRAP';` : ''}
+        f${frameIdx}.layoutMode = '${flex === 'none' || flex === 'stack' || flex === 'free' ? 'NONE' : (flex === 'row' ? 'HORIZONTAL' : 'VERTICAL')}';
+        ${flex === 'none' || flex === 'stack' || flex === 'free' ? '' : `${wrap && flex === 'row' ? `f${frameIdx}.layoutWrap = 'WRAP';` : ''}
         f${frameIdx}.itemSpacing = ${itemGap};
         f${frameIdx}.paddingTop = f${frameIdx}.paddingBottom = ${py};
         f${frameIdx}.paddingLeft = f${frameIdx}.paddingRight = ${px};
@@ -554,7 +554,7 @@ export class FigmaClient {
         f${frameIdx}.counterAxisAlignItems = '${alignVal}';
         f${frameIdx}.primaryAxisSizingMode = '${flex === 'col' ? (hugHeight || !hasExplicitHeight ? 'AUTO' : 'FIXED') : (hugWidth || !hasExplicitWidth ? 'AUTO' : 'FIXED')}';
         f${frameIdx}.counterAxisSizingMode = '${flex === 'col' ? (hugWidth || !hasExplicitWidth ? 'AUTO' : 'FIXED') : (hugHeight || !hasExplicitHeight ? 'AUTO' : 'FIXED')}';
-        ${wrap && flex === 'row' && wrapGap > 0 ? `f${frameIdx}.counterAxisSpacing = ${wrapGap};` : ''}
+        ${wrap && flex === 'row' && wrapGap > 0 ? `f${frameIdx}.counterAxisSpacing = ${wrapGap};` : ''}`}
         f${frameIdx}.clipsContent = ${clip};
         ${opacity !== null ? `f${frameIdx}.opacity = ${opacity};` : ''}
         ${visible === false ? `f${frameIdx}.visible = false;` : ''}
@@ -1126,6 +1126,7 @@ export class FigmaClient {
 
           // Auto-FILL text in column layouts so Safe Mode wraps text correctly.
           const isCol = parentFlex === 'col' || parentFlex === 'column';
+          const parentNone = parentFlex === 'none' || parentFlex === 'stack' || parentFlex === 'free';
           const autoFill = isCol && !fillWidth;
           return `
         __currentNode = 'Text: ${item.content.substring(0, 30).replace(/'/g, "\\'")}';
@@ -1138,7 +1139,7 @@ export class FigmaClient {
         el${idx}.characters = ${JSON.stringify(item.content)};
         ${textFillCode.code}
         ${parentVar}.appendChild(el${idx});
-        ${fillWidth ? `el${idx}.layoutSizingHorizontal = 'FILL'; el${idx}.textAutoResize = 'HEIGHT';` : ''}
+        ${fillWidth && !parentNone ? `el${idx}.layoutSizingHorizontal = 'FILL'; el${idx}.textAutoResize = 'HEIGHT';` : ''}
         ${autoFill ? `// Auto-FILL: text in col layout needs FILL for Safe Mode wrapping
         if (${parentVar}.layoutMode === 'VERTICAL' && (${parentVar}.counterAxisSizingMode === 'FIXED' || ${parentVar}.primaryAxisSizingMode === 'FIXED')) {
           try { el${idx}.layoutSizingHorizontal = 'FILL'; el${idx}.textAutoResize = 'HEIGHT'; } catch(e) {}
@@ -1267,31 +1268,37 @@ export class FigmaClient {
           const resizeW = hasWidth ? fWidth : (wantFillH ? 1 : 100);
           const resizeH = hasHeight ? fHeight : (wantFillV ? 1 : 100);
 
+          // flex="none" (aliases: stack/free) → no auto-layout. Children keep
+          // their own x/y, so they OVERLAP (z-stack): spinners (ring+arc),
+          // badges on avatars, layered graphics. Auto-layout-only props (gap,
+          // padding, align, sizing) must be skipped or Figma throws on NONE.
+          const isNone = fFlex === 'none' || fFlex === 'stack' || fFlex === 'free';
+          const parentIsNone = parentFlex === 'none' || parentFlex === 'stack' || parentFlex === 'free';
           return `
         __currentNode = 'Frame: ${fName.replace(/'/g, "\\'")}';
         const el${idx} = figma.createFrame();
         el${idx}.name = ${JSON.stringify(fName)};
-        el${idx}.layoutMode = '${fFlex === 'row' ? 'HORIZONTAL' : 'VERTICAL'}';
-        ${fWrap && fFlex === 'row' ? `el${idx}.layoutWrap = 'WRAP';` : ''}
-        ${hasWidth || hasHeight || wantFillH || wantFillV ? `el${idx}.resize(${resizeW}, ${resizeH});` : ''}
-        el${idx}.itemSpacing = ${fGap};
+        el${idx}.layoutMode = '${isNone ? 'NONE' : (fFlex === 'row' ? 'HORIZONTAL' : 'VERTICAL')}';
+        ${!isNone && fWrap && fFlex === 'row' ? `el${idx}.layoutWrap = 'WRAP';` : ''}
+        ${hasWidth || hasHeight || (!isNone && (wantFillH || wantFillV)) ? `el${idx}.resize(${resizeW}, ${resizeH});` : ''}
+        ${isNone ? '' : `el${idx}.itemSpacing = ${fGap};
         el${idx}.paddingTop = ${fPt};
         el${idx}.paddingBottom = ${fPb};
         el${idx}.paddingLeft = ${fPl};
-        el${idx}.paddingRight = ${fPr};
+        el${idx}.paddingRight = ${fPr};`}
         el${idx}.cornerRadius = ${fRounded};
         ${frameFillCode.code}
         ${frameStrokeCode.code}
         ${frameEffectsCode}
-        el${idx}.primaryAxisAlignItems = '${fJustifyVal}';
-        el${idx}.counterAxisAlignItems = '${fAlignVal}';
+        ${isNone ? '' : `el${idx}.primaryAxisAlignItems = '${fJustifyVal}';
+        el${idx}.counterAxisAlignItems = '${fAlignVal}';`}
         el${idx}.clipsContent = ${fClip};
         ${fOpacity !== null ? `el${idx}.opacity = ${fOpacity};` : ''}
         ${fVisible === false ? `el${idx}.visible = false;` : ''}
         ${fLocked === true ? `el${idx}.locked = true;` : ''}
         ${parentVar}.appendChild(el${idx});
-        el${idx}.layoutSizingHorizontal = '${hSizing}';
-        el${idx}.layoutSizingVertical = '${vSizing}';
+        ${parentIsNone ? '' : `el${idx}.layoutSizingHorizontal = '${hSizing}';
+        el${idx}.layoutSizingVertical = '${vSizing}';`}
         ${pctW !== null || pctH !== null ? `try {
           const _pp = el${idx}.parent;
           if (_pp && 'width' in _pp) {
@@ -1743,8 +1750,8 @@ export class FigmaClient {
         ${rootStrokeCode.code}
         ${rootEffectsCode}
         ${rootImageCode}
-        frame.layoutMode = '${flex === 'row' ? 'HORIZONTAL' : 'VERTICAL'}';
-        ${wrap && flex === 'row' ? `frame.layoutWrap = 'WRAP';` : ''}
+        frame.layoutMode = '${flex === 'none' || flex === 'stack' || flex === 'free' ? 'NONE' : (flex === 'row' ? 'HORIZONTAL' : 'VERTICAL')}';
+        ${flex === 'none' || flex === 'stack' || flex === 'free' ? '' : `${wrap && flex === 'row' ? `frame.layoutWrap = 'WRAP';` : ''}
         frame.itemSpacing = ${gap};
         frame.paddingTop = ${py};
         frame.paddingBottom = ${py};
@@ -1756,7 +1763,7 @@ export class FigmaClient {
         frame.counterAxisSizingMode = '${flex === 'col' ? (hugWidth || fillWidth || !hasExplicitWidth ? 'AUTO' : 'FIXED') : (hugHeight || fillHeight || !hasExplicitHeight ? 'AUTO' : 'FIXED')}';
         ${fillWidth ? `frame.layoutSizingHorizontal = 'FILL';` : ''}
         ${fillHeight ? `frame.layoutSizingVertical = 'FILL';` : ''}
-        ${wrap && flex === 'row' && wrapGap > 0 ? `frame.counterAxisSpacing = ${wrapGap};` : ''}
+        ${wrap && flex === 'row' && wrapGap > 0 ? `frame.counterAxisSpacing = ${wrapGap};` : ''}`}
         frame.clipsContent = ${clip};
         ${opacity !== null ? `frame.opacity = ${opacity};` : ''}
         ${visible === false ? `frame.visible = false;` : ''}

@@ -291,6 +291,8 @@ figma-cli set fill "var:primary"
 ```jsx
 // Layout
 flex="row"              // or "col"
+flex="none"             // no auto-layout: children OVERLAP at their x/y (z-stack)
+                        //   for spinners (ring+arc), badges on avatars, layered art
 gap={16}                // spacing
 p={24}                  // padding all sides
 px={16} py={8}          // padding x/y

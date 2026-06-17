@@ -277,7 +277,7 @@ import { variablesCode, variableCollectionsCode, variableChunkCode, resolveAlias
 
 const FIXTURE_VARS = [
   {
-    id: 'VC:1', name: 'Primer Primitives',
+    id: 'VC:1', name: 'Acme Primitives',
     modes: [{ id: 'm1', name: 'Light' }, { id: 'm2', name: 'Dark' }],
     variables: [
       { id: 'V:1', name: 'fgColor-default', type: 'COLOR', values: { Light: '#1f2328', Dark: '#e6edf3' } },
@@ -349,20 +349,20 @@ test('formatVarValue renders hex, alias, number and string cells', () => {
 
 test('buildVariableTokens keys by collection name with modes + variable map', () => {
   const tokens = buildVariableTokens(resolveAliases(FIXTURE_VARS));
-  assert.deepEqual(tokens['Primer Primitives'].modes, ['Light', 'Dark']);
-  assert.equal(tokens['Primer Primitives'].variables['button-primary-bgColor-rest'].values.Light, '#1f883d');
-  assert.equal(tokens['Primer Primitives'].variables['button-primary-bgColor-rest'].type, 'COLOR');
+  assert.deepEqual(tokens['Acme Primitives'].modes, ['Light', 'Dark']);
+  assert.equal(tokens['Acme Primitives'].variables['button-primary-bgColor-rest'].values.Light, '#1f883d');
+  assert.equal(tokens['Acme Primitives'].variables['button-primary-bgColor-rest'].type, 'COLOR');
 });
 
 test('generateDesignMd emits the Variables section with a per-collection table', () => {
   const md = generateDesignMd({ ...EXTRACTION, variables: FIXTURE_VARS });
-  assert.match(md, /### Collection: Primer Primitives {2}· {2}4 variables {2}· {2}modes: Light, Dark/);
+  assert.match(md, /### Collection: Acme Primitives {2}· {2}4 variables {2}· {2}modes: Light, Dark/);
   assert.match(md, /\| button-primary-bgColor-rest \| COLOR \| `#1f883d` \| `#238636` \|/);
   // alias resolved to a name, not an id
   assert.match(md, /\| button-default-fgColor \| COLOR \| → var:fgColor-default \| → var:fgColor-default \|/);
 });
 
-// These guard generality across ARBITRARY design systems, not just Primer:
+// These guard generality across ARBITRARY design systems, not just one vendor:
 // names/modes/values can contain markdown-hostile characters, and collection
 // names are not unique in Figma.
 
@@ -451,7 +451,7 @@ test('variableImportCode handles a full extract→import roundtrip shape', () =>
   const parsed = parseDesignMd(file);
   const code = variableImportCode(parsed.tokens.variables);
   assert.doesNotThrow(() => new Function(`return ${code}`));
-  assert.match(code, /Primer Primitives/);
+  assert.match(code, /Acme Primitives/);
   assert.match(code, /button-primary-bgColor-rest/);
 });
 
@@ -461,7 +461,7 @@ test('Variables roundtrip: parseDesignMd reads the JSON variables block back', (
   const file = join(dir, 'DESIGN.md');
   writeFileSync(file, md);
   const parsed = parseDesignMd(file);
-  const pp = parsed.tokens.variables['Primer Primitives'];
+  const pp = parsed.tokens.variables['Acme Primitives'];
   assert.deepEqual(pp.modes, ['Light', 'Dark']);
   assert.equal(pp.variables['fgColor-default'].values.Dark, '#e6edf3');
   // existing color/typography parsing still works alongside the new block

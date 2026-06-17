@@ -21,8 +21,9 @@ export function listPagesCode() {
 /**
  * Eval snippet: capture every LOCAL variable collection of the open file —
  * names, modes, and each variable's per-mode resolved value. This is the
- * authoritative token layer (e.g. Primer's `button-primary-bgColor-rest`),
- * which the derived color palette can only approximate by sampling fills.
+ * authoritative token layer (a system's real semantic tokens, e.g.
+ * `button-primary-bgColor-rest` with light/dark modes), which the derived
+ * color palette can only approximate by sampling fills.
  *
  * COLOR values resolve to hex (8-digit when alpha < 1), FLOAT/STRING/BOOLEAN
  * pass through, and VARIABLE_ALIAS values are captured as { alias: <id> } for

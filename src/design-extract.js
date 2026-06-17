@@ -31,6 +31,17 @@ export function listPagesCode() {
 export function variablesCode() {
   return `(async () => {
     const hex = (c) => '#' + [c.r, c.g, c.b].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('') + (c.a != null && c.a < 1 ? Math.round(c.a * 255).toString(16).padStart(2, '0') : '');
+    // Resolve an alias target to its variable NAME (cached). Works for library /
+    // remote variables too — Figma can fetch imported variable ids here, which a
+    // Node-side id→name map of only the local collections cannot.
+    const nameCache = new Map();
+    const aliasName = async (id) => {
+      if (nameCache.has(id)) return nameCache.get(id);
+      let name = id;
+      try { const t = await figma.variables.getVariableByIdAsync(id); if (t) name = t.name; } catch (e) {}
+      nameCache.set(id, name);
+      return name;
+    };
     let cols = [];
     try { cols = await figma.variables.getLocalVariableCollectionsAsync(); } catch (e) { return JSON.stringify([]); }
     const out = [];
@@ -45,7 +56,7 @@ export function variablesCode() {
         for (const m of col.modes) {
           const raw = v.valuesByMode[m.modeId];
           if (raw == null) continue;
-          if (typeof raw === 'object' && raw.type === 'VARIABLE_ALIAS') values[m.name] = { alias: raw.id };
+          if (typeof raw === 'object' && raw.type === 'VARIABLE_ALIAS') values[m.name] = { alias: await aliasName(raw.id) };
           else if (v.resolvedType === 'COLOR' && raw && typeof raw === 'object' && 'r' in raw) values[m.name] = hex(raw);
           else values[m.name] = raw;
         }

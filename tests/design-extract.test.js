@@ -297,6 +297,15 @@ test('variablesCode is valid JS and uses the dynamic-page variable APIs', () => 
   assert.match(code, /VARIABLE_ALIAS/);
 });
 
+test('variablesCode resolves alias names in-Figma (handles library/remote refs)', () => {
+  const code = variablesCode();
+  // Alias targets are looked up to their name via a cache so even imported
+  // library variable ids resolve to a readable name, not a raw VariableID.
+  assert.match(code, /nameCache/);
+  assert.match(code, /aliasName/);
+  assert.match(code, /alias: await aliasName\(raw\.id\)/);
+});
+
 test('resolveAliases swaps alias ids for the referenced variable name', () => {
   const resolved = resolveAliases(FIXTURE_VARS);
   const aliasVar = resolved[0].variables.find(v => v.name === 'button-default-fgColor');

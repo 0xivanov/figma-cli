@@ -1,4 +1,4 @@
-# figma-ds-cli
+# figma-cli
 
 <p align="center">
   <a href="https://intodesignsystems.com"><img src="https://img.shields.io/badge/Into_Design_Systems-intodesignsystems.com-ff6b35" alt="Into Design Systems"></a>
@@ -20,7 +20,7 @@
 
 ## What is this?
 
-figma-ds-cli lets an **AI assistant build directly in your Figma Desktop**, while you talk to it in normal language.
+figma-cli lets an **AI assistant build directly in your Figma Desktop**, while you talk to it in normal language.
 
 You don't run commands or write code. You open **Claude** in this project and say things like:
 
@@ -102,7 +102,7 @@ Cursor builds it in Figma instantly.
 
 ## How it connects to Figma: Yolo vs Safe mode
 
-figma-ds-cli talks to your Figma Desktop in one of two ways. Claude picks one during setup , here's what they mean, so you know what's happening:
+figma-cli talks to your Figma Desktop in one of two ways. Claude picks one during setup , here's what they mean, so you know what's happening:
 
 ### ⚡ Yolo Mode , the default, recommended
 - **Fully automatic.** Claude sets it up, you do nothing.
@@ -203,7 +203,7 @@ The reverse also works. Open any Figma file , yours, a client's, a Community fil
 
 > "Export the design system as markdown."
 
-figma-ds-cli scans **every page** (no truncation, even on 100k+ node files) and writes a `DESIGN.md` with the full token map: colors ranked by usage, the type scale, spacing, radii, shadows, plus a variant matrix for every component set (e.g. Button: variant × size × state, with all values). If the file defines real **variable collections**, it captures those too , every variable with its real name, all its modes (light/dark, high-contrast, whatever the system uses) and its alias chains , not just a palette sampled from fills. The file round-trips , `figma-cli import` recreates those collections faithfully (modes and aliases included) in any other file.
+figma-cli scans **every page** (no truncation, even on 100k+ node files) and writes a `DESIGN.md` with the full token map: colors ranked by usage, the type scale, spacing, radii, shadows, plus a variant matrix for every component set (e.g. Button: variant × size × state, with all values). If the file defines real **variable collections**, it captures those too , every variable with its real name, all its modes (light/dark, high-contrast, whatever the system uses) and its alias chains , not just a palette sampled from fills. The file round-trips , `figma-cli import` recreates those collections faithfully (modes and aliases included) in any other file.
 
 Components aren't just documented, they're addressable: `figma-cli spec "Button"` reads the markdown in code (zero model tokens) and returns just that one component's spec plus its reuse handle, so an agent pulls in exactly what it needs on demand instead of loading the whole file.
 
@@ -221,7 +221,7 @@ Huge files stay usable: when the structure trees alone would blow an AI context 
 
 ## Works offline / with local AI
 
-Prefer to keep everything on your machine? figma-ds-cli also works with **local LLMs** (via LM Studio or Ollama) , fully offline, no cloud, no key. Ask Claude to "set up the local LLM agent" and it'll walk you through it.
+Prefer to keep everything on your machine? figma-cli also works with **local LLMs** (via LM Studio or Ollama) , fully offline, no cloud, no key. Ask Claude to "set up the local LLM agent" and it'll walk you through it.
 
 ---
 
@@ -294,7 +294,7 @@ You don't need any of this to use the tool , it's here for tinkerers.
 
 ## Why this exists
 
-Figma plugins are slow to build and tied to one UI. AI assistants are great at *describing intent* but need a clean way to act on Figma. figma-ds-cli is the bridge: it talks to Figma Desktop directly, so you can design by conversation , locally, with no API key and no cloud roundtrip.
+Figma plugins are slow to build and tied to one UI. AI assistants are great at *describing intent* but need a clean way to act on Figma. figma-cli is the bridge: it talks to Figma Desktop directly, so you can design by conversation , locally, with no API key and no cloud roundtrip.
 
 **You design. The AI builds. Figma updates.**
 

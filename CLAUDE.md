@@ -556,6 +556,29 @@ figma-cli motion clear <id> [--field opacity] [--styles]
 - **`apply` spec:** `{ "duration": 1.2, "tracks": [ { "node":"12:5", "field":"opacity", "keys":[{"t":0,"v":0},{"t":0.4,"v":1,"ease":"ease-out"}] }, … ] }`. Omit `duration` to auto-fit the last keyframe; it's never shortened.
 - **Verify by numbers, not video:** `motion inspect` reads tracks back (same philosophy as `spec --check`). Real motion preview is a server-side video export, outside the Plugin API — don't attempt it in the CLI.
 
+### ⚠️ Known limitation: Figma Motion pairs the animated frame (Beta)
+
+In the current Figma Desktop Motion Beta (build 126.6.x), `applyManualKeyframeTrack`
+often makes Figma **duplicate the timeline-owner top-level frame** — after animating,
+you may see TWO frames of the same name where you expect one (proven: page-child
+count 1→2 inside a single eval). This is Figma's own behavior, not a figma-cli bug
+(Figma's Motion docs don't mention it), and it is **not deterministic** — sometimes
+it happens, sometimes not, and re-running any `motion` command on an already-animated
+frame can trigger it.
+
+- **The two frames are a LINKED PAIR — do NOT try to delete the "duplicate".**
+  Removing it also destroys the original (the animated node becomes invalid), so any
+  auto-dedup is impossible. `figma-cli` intentionally does NOT clean this up.
+- **It's cosmetically harmless:** the pair is stacked at identical coordinates, so on
+  the canvas and in Presentation mode it reads as ONE clean animation. The extra frame
+  is only visible in the Layers panel.
+- **Practical advice:** apply the animation ONCE and don't re-run `motion` commands on
+  the same frame (each extra call risks another pair). Don't fight it — it's a Figma
+  Beta artifact that should resolve when Figma stabilizes Motion.
+- **Root cause of the *inconsistent multiplying* was separate** — a daemon race that
+  spawned multiple daemons (fixed). If you ever see MORE than a clean pair (3-4 copies,
+  0 after delete), check `ps aux | grep [d]aemon.js | wc -l` is 1.
+
 ## Variant Sets (Frames or Components → Component Set)
 
 When a user has N frames (or N components) that should become one component with variants, use `variants from`. It auto-promotes any FRAMEs to COMPONENTs, renames them `Property=Value` so Figma derives exactly one variant property, then calls `figma.combineAsVariants`. The result is a real Component Set you can swap variants on in the right panel.

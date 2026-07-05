@@ -265,6 +265,7 @@ Prefer to keep everything on your machine? figma-cli also works with **local LLM
 - **Stagger / sequence** the same animation across many layers with one command
 - Apply Figma's **first-party animation styles** and set **timeline** duration
 - Author complex, multi-layer animations from a single JSON spec; inspect any layer's motion by numbers
+- *Beta caveat:* Figma's Motion Beta may pair the animated frame (a second, identically-stacked copy in the Layers panel). It's a Figma-side behavior, cosmetically invisible on canvas, and must not be deleted (the pair is linked). Apply motion once and don't re-run on the same frame.
 
 **♿ Accessibility (4)**
 - Contrast checking (WCAG)

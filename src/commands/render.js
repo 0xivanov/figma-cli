@@ -367,8 +367,11 @@ program
       // - var:name syntax for variable binding
       // - <Slot> elements for component slots
       // - <Icon> elements
+      // - Ellipse/Circle arc/innerRadius (rings, spinners, donut/pie) — the
+      //   external figma-use renderer silently drops these, so route to ours
       // - gradient/effects/blur (needs full parser, fast-path doesn't handle them)
       if (jsx.includes('var:') || jsx.includes('<Slot') || jsx.includes('<Icon') ||
+          /\barc=|\barcStart=|\binnerRadius=/.test(jsx) ||
           /-gradient\s*\(/i.test(jsx) || jsx.includes('shadow=') || jsx.includes('innerShadow=') ||
           jsx.includes('blur=') || jsx.includes('bgBlur=') || jsx.includes('image=') ||
           jsx.includes('noise=') || jsx.includes('texture=') || jsx.includes('progressiveBlur=') ||

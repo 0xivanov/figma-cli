@@ -8,6 +8,18 @@ import {
 
 // ============ SLOT COMMANDS ============
 
+// Shared snippet (spliced into eval templates) that normalizes an empty slot so it
+// reads as a compact drop zone instead of a 100px FIXED void. Assumes a `slot`
+// variable is in scope. Fills width when the parent is auto-layout, hugs height,
+// and applies a small min-height so the empty slot stays visible.
+const NORMALIZE_EMPTY_SLOT = `
+      try { if (slot.parent && slot.parent.layoutMode && slot.parent.layoutMode !== 'NONE') slot.layoutSizingHorizontal = 'FILL'; } catch (e) {}
+      if (slot.children.length === 0) {
+        try { slot.primaryAxisSizingMode = 'AUTO'; } catch (e) {}
+        try { slot.layoutSizingVertical = 'HUG'; } catch (e) {}
+        try { slot.minHeight = Math.max(slot.minHeight || 0, 40); } catch (e) {}
+      }`;
+
 const slot = program
   .command('slot')
   .description('Slot operations (create, list, preferred, reset, convert)');
@@ -35,12 +47,14 @@ slot
       }
 
       const slot = comp.createSlot(${JSON.stringify(name)});
+      try { slot.name = ${JSON.stringify(name)}; } catch (e) {}
       slot.layoutMode = '${flex}';
       slot.itemSpacing = ${gap};
       slot.paddingTop = ${padding};
       slot.paddingBottom = ${padding};
       slot.paddingLeft = ${padding};
       slot.paddingRight = ${padding};
+${NORMALIZE_EMPTY_SLOT}
 
       return {
         success: true,
@@ -338,10 +352,9 @@ slot
 
       // Capture layout alignment + auto-layout sizing so the slot inherits how the
       // frame was sized (FILL/HUG/FIXED) instead of hard-coding a FIXED box.
-      let alignPrimary = null, alignCounter = null, sizeH = null, sizeV = null, origMinH = null;
+      let alignPrimary = null, alignCounter = null, sizeH = null, sizeV = null;
       try { alignPrimary = frame.primaryAxisAlignItems; alignCounter = frame.counterAxisAlignItems; } catch (e) {}
       try { sizeH = frame.layoutSizingHorizontal; sizeV = frame.layoutSizingVertical; } catch (e) {}
-      try { origMinH = frame.minHeight; } catch (e) {}
 
       // Remember the frame's exact position so the slot lands in place, not at the
       // end of the component (createSlot always appends).
@@ -383,12 +396,8 @@ slot
       if (sizeH) { try { slot.layoutSizingHorizontal = sizeH; } catch (e) {} }
       if (sizeV) { try { slot.layoutSizingVertical = sizeV; } catch (e) {} }
 
-      // An empty slot should read as a compact drop zone, not a tall void: hug its
-      // (currently empty) content and give it a small min-height so it stays visible.
-      if (slot.children.length === 0) {
-        try { slot.layoutSizingVertical = 'HUG'; } catch (e) {}
-        try { slot.minHeight = Math.max(origMinH || 0, 40); } catch (e) {}
-      }
+      // An empty slot should read as a compact drop zone, not a tall void.
+${NORMALIZE_EMPTY_SLOT}
 
       return {
         success: true,

@@ -1,0 +1,72 @@
+{
+  "runId": "money-manager-growth-20260713",
+  "phase": "phase3",
+  "step": "feature-screens-validated",
+  "entities": {
+    "pages": {
+      "components": "2:149",
+      "productScreens": "2:150"
+    },
+    "components": {
+      "scheduleRow": "31:1283",
+      "budgetProgressCard": "31:1317",
+      "investmentActivityRow": "31:1348",
+      "bottomNavigation": "31:1794",
+      "bottomNavigationVariants": {
+        "home": "8:65",
+        "activity": "31:1719",
+        "invest": "31:1720",
+        "profile": "31:1721"
+      }
+    },
+    "growthFlow": {
+      "frame": "31:1352",
+      "grid": "31:1354"
+    },
+    "lightScreens": {
+      "scheduledActivity": "31:1355",
+      "newSchedule": "31:1356",
+      "scheduleDetail": "31:1357",
+      "budgets": "31:1358",
+      "budgetEditor": "31:1359",
+      "investPortfolio": "31:1360",
+      "recordTrade": "31:1361",
+      "investmentPlan": "31:1362",
+      "notificationSettings": "31:1363",
+      "auditExport": "31:1364"
+    },
+    "darkScreens": {
+      "scheduledActivity": "33:2615",
+      "newSchedule": "33:2681",
+      "scheduleDetail": "33:2730",
+      "budgets": "33:2771",
+      "budgetEditor": "33:2834",
+      "investPortfolio": "33:2871",
+      "recordTrade": "33:2949",
+      "investmentPlan": "33:2994",
+      "notificationSettings": "33:3034",
+      "auditExport": "33:3077"
+    }
+  },
+  "validation": {
+    "screens": "20/20 visually inspected at 1x or 2x",
+    "contrast": "463/463 text nodes pass WCAG AA",
+    "text": "0 errors; remaining notices are advisory small-label and text-spacing warnings",
+    "touch": "interactive rows and cards exceed 44pt; audit false positives are nested labels and native 48x28 switches"
+  },
+  "pendingValidations": [],
+  "completedSteps": [
+    "phase0",
+    "phase1-existing-foundations",
+    "phase2-existing-structure",
+    "component-schedule-row",
+    "component-budget-progress-card",
+    "component-investment-activity-row",
+    "component-liquid-glass-navigation-variants",
+    "scheduled-money-light-and-dark",
+    "budgets-light-and-dark",
+    "investments-light-and-dark",
+    "notifications-and-export-light-and-dark",
+    "accessibility-contrast-pass"
+  ]
+}

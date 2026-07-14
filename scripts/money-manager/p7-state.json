@@ -1,7 +1,7 @@
 {
-  "runId": "money-manager-growth-20260713",
-  "phase": "phase3",
-  "step": "feature-screens-validated",
+  "runId": "money-manager-native-tab-bar-20260714",
+  "phase": "phase4",
+  "step": "native-ios-tab-bar-validated",
   "entities": {
     "pages": {
       "components": "2:149",
@@ -12,11 +12,26 @@
       "budgetProgressCard": "31:1317",
       "investmentActivityRow": "31:1348",
       "bottomNavigation": "31:1794",
+      "tabBar": "31:1794",
       "bottomNavigationVariants": {
         "home": "8:65",
         "activity": "31:1719",
         "invest": "31:1720",
         "profile": "31:1721"
+      },
+      "tabBarVariants": {
+        "light": {
+          "home": "8:65",
+          "activity": "31:1719",
+          "invest": "31:1720",
+          "profile": "31:1721"
+        },
+        "dark": {
+          "home": "41:403",
+          "activity": "41:428",
+          "invest": "41:453",
+          "profile": "41:478"
+        }
       }
     },
     "growthFlow": {
@@ -52,7 +67,8 @@
     "screens": "20/20 visually inspected at 1x or 2x",
     "contrast": "463/463 text nodes pass WCAG AA",
     "text": "0 errors; remaining notices are advisory small-label and text-spacing warnings",
-    "touch": "interactive rows and cards exceed 44pt; audit false positives are nested labels and native 48x28 switches"
+    "touch": "interactive rows and cards exceed 44pt; audit false positives are nested labels and native 48x28 switches",
+    "nativeTabBar": "8 variants and 14 linked instances validated; 89.5x68pt targets; no missing fonts or legacy center action; light contrast passes built-in audit; dark rendered contrast is 13.45:1 active and 12.89:1 inactive"
   },
   "pendingValidations": [],
   "completedSteps": [
@@ -67,6 +83,9 @@
     "budgets-light-and-dark",
     "investments-light-and-dark",
     "notifications-and-export-light-and-dark",
-    "accessibility-contrast-pass"
+    "accessibility-contrast-pass",
+    "component-native-ios-tab-bar",
+    "product-screens-native-ios-tab-bar",
+    "native-ios-tab-bar-accessibility-pass"
   ]
 }
